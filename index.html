@@ -1,1 +1,97 @@
-# My SOC Lab Portfolio
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOC Lab Portfolio</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        ul { margin-top: 10px; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="index.html" class="nav-item active">Home</a>
+    <a href="soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="case_1.html" class="nav-item">Case 1</a>
+    <a href="case_2.html" class="nav-item">Case 2</a>
+    <a href="case_3.html" class="nav-item">Case 3</a>
+</div>
+
+<h1>SOC Lab Portfolio</h1>
+<p>
+    This project documents a complete SOC L2 investigation workflow across three simulated security incidents.
+    Each case includes attacker activity, SIEM visibility, log analysis, timeline reconstruction, and
+    incident response documentation using DFIR‑IRIS.
+</p>
+
+<h2>Cases</h2>
+<ul>
+    <li><a href="soc_lab_setup.html">0. Lab Setup</a></li>
+    <li><a href="case_1.html">1. Case 1 – Web Server Intrusion Attempt (Linux / Grav CMS)</a></li>
+    <li><a href="case_2.html">2. Case 2 – Windows Host Compromise Attempt</a></li>
+    <li><a href="case_3.html">3. Case 3 – Multi‑Stage Intrusion Simulation (Phishing → Execution → C2 → Exfiltration)</a></li>
+</ul>
+
+<p>
+    Each case contains: evidence, SIEM queries, log artifacts, MITRE ATT&CK mapping,
+    and conclusions based on the observed activity.
+</p>
+
+<h2>Skills Demonstrated</h2>
+<ul>
+    <li>Log analysis (Windows Event Logs, Sysmon, Nginx access/error logs)</li>
+    <li>SIEM investigation and alert correlation (Wazuh)</li>
+    <li>Threat detection and pattern recognition</li>
+    <li>Incident documentation and timeline reconstruction (DFIR‑IRIS)</li>
+    <li>MITRE ATT&CK technique identification and mapping</li>
+    <li>Basic threat hunting queries and filtering</li>
+    <li>Analysis of attacker behavior and TTPs</li>
+</ul>
+
+<h2>Tools & Technologies</h2>
+<ul>
+    <li>Wazuh SIEM</li>
+    <li>DFIR‑IRIS Incident Response Platform</li>
+    <li>Kali Linux (attacker simulation)</li>
+    <li>Windows 10 (victim host)</li>
+    <li>Linux Web Server (Grav CMS + Nginx)</li>
+    <li>Sysmon</li>
+    <li>MITRE ATT&CK Framework</li>
+</ul>
+
+</body>
+</html>

