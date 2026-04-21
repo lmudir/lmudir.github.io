@@ -1,0 +1,203 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulnhub - Empire_Breakout</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item active">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>Empire_Breakout (VulnHub – Easy)</h1>
+
+<p>
+Empire_Breakout is a lightweight VulnHub machine that mixes web enumeration, Git leakage, weak encoding,
+and Linux capabilities for privilege escalation.  
+The foothold is obtained by discovering an encoded password inside the Apache default page and validating
+users via SMB enumeration.  
+Privilege escalation is achieved through misconfigured Linux capabilities that allow reading sensitive files.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: 10.10.10.8  
+<br>Initial vector: encoded password in Apache page → Webmin console  
+<br>Privilege escalation: Linux capabilities → read protected files  
+</p>
+
+<h2>Enumeration</h2>
+
+<h3>Port Scan</h3>
+<pre>
+$ sudo nmap -p- --open -sS --min-rate=5000 -n -Pn -vvv 10.10.10.8 -oG Ports.txt
+</pre>
+
+<h3>Service Scan</h3>
+<pre>
+$ sudo nmap -p80,139,445,10000,20000 -sCV 10.10.10.8 -oN Services.txt
+</pre>
+
+<p>
+Key findings:
+</p>
+
+<ul>
+  <li>Apache on port 80</li>
+  <li>SMB on 139/445</li>
+  <li>Webmin on 10000/20000</li>
+</ul>
+
+<h2>Foothold – Apache Source Code Leak</h2>
+
+<p>
+The default Apache “It works” page contains an encoded string.  
+The encoding is **Brainfuck**, a common CTF trick.
+</p>
+
+<p>
+Decoding reveals a password.  
+To identify the user, enumerate SMB:
+</p>
+
+<pre>
+$ enum4linux 10.10.10.8 | tee output_enum4linux.txt
+</pre>
+
+<p>
+With the username and decoded password, log into Webmin:
+</p>
+
+<pre>
+https://10.10.10.8:20000/
+</pre>
+
+<p>
+Webmin provides a built‑in shell:
+</p>
+
+<pre>
+https://10.10.10.8:20000/shell
+</pre>
+
+<p>
+This gives direct command execution on the host.
+</p>
+
+<h2>Privilege Escalation – Linux Capabilities</h2>
+
+<p>
+Enumerate capabilities:
+</p>
+
+<pre>
+$ getcap -r / 2>/dev/null
+</pre>
+
+<p>
+A binary owned by a low‑privileged user has extended capabilities, allowing it to read arbitrary files —
+including <code>/etc/shadow</code> and even <code>/root</code>.
+</p>
+
+<p>
+Example exploitation:
+</p>
+
+<pre>
+$ cd /etc
+$ /home/cyber/tar -czf /tmp/shadow.tar.gz shadow
+$ cd /tmp
+$ /home/cyber/tar -xzf shadow.tar.gz
+</pre>
+
+<p>
+Once <code>/etc/shadow</code> is extracted, crack the root hash or read other sensitive files directly.
+</p>
+
+<p>
+This leads to full root compromise.
+</p>
+
+<h2>Conclusion</h2>
+<p>
+Empire_Breakout is a short but interesting machine: a Brainfuck‑encoded password hidden in the Apache page,
+SMB enumeration to identify users, Webmin shell access, and a misconfigured capability‑enabled binary that
+allows reading protected files.  
+A clean demonstration of how small misconfigurations can escalate into full system compromise.
+</p>
+
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+

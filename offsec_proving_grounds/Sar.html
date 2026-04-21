@@ -1,0 +1,140 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offsec Proving Grounds - Sar</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item">HackTheBox</a>
+    <a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+    <a href="../offsec_proving_grounds.html" class="nav-item active">Offsec Proving Grounds</a>
+</div>
+<!-- -->
+
+<h1>Sar (OffSec Proving Grounds)</h1>
+
+<p>
+Sar is a very small machine centered around a vulnerable sar2HTML installation that provides RCE.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: Sar  
+<br>Initial vector: sar2HTML 3.2.1 RCE  
+<br>Privilege escalation: (lab‑dependent, not fully explored here)  
+</p>
+
+<h2>Enumeration</h2>
+
+<p>
+<code>/robots.txt</code> reveals:
+</p>
+
+<pre>
+/sar2HTML
+</pre>
+
+<p>
+Nmap http-enum also finds:
+</p>
+
+<pre>
+/phpinfo.php
+/sar2HTML (case sensitive)
+</pre>
+
+<p>
+Version:
+</p>
+
+<pre>
+sar2HTML 3.2.1
+</pre>
+
+<h2>Exploitation – sar2HTML RCE</h2>
+
+<p>
+Use the public exploit:
+</p>
+
+<pre>
+https://github.com/AssassinUKG/sar2HTML/blob/main/sar2HTMLshell.py
+</pre>
+
+<p>Example usage:</p>
+<pre>
+$ python3 exploit.py -ip 192.168.226.35/sar2HTML
+</pre>
+
+<p>
+In this lab environment, reverse connections were unstable, but the intended path is to obtain a shell via the
+sar2HTML RCE and then proceed with standard Linux enumeration and privilege escalation.
+</p>
+
+<!-- -->
+
+</body>
+</html>
+

