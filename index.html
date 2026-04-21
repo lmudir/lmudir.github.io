@@ -1,0 +1,235 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOC & Pentesting Portfolio</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        ul { margin-top: 10px; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="index.html" class="nav-item active">Home</a>
+    <a href="soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="case_1.html" class="nav-item">Case 1</a>
+    <a href="case_2.html" class="nav-item">Case 2</a>
+    <a href="case_3.html" class="nav-item">Case 3</a>
+    <a href="ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="more_tools.html" class="nav-item">More Tools</a>
+    <a href="htb.html" class="nav-item">HackTheBox</a>
+    <a href="vulnhub.html" class="nav-item">Vulnhub</a>
+    <a href="offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<h1>SOC & Pentesting Portfolio</h1>
+
+<p>
+    This portfolio contains a complete SOC L2 investigation lab along with an extensive collection of hands‑on
+    penetration testing writeups. It demonstrates both defensive and offensive security skills through real
+    attack simulations, log analysis, SIEM investigation, exploitation workflows, and privilege escalation
+    techniques.
+</p>
+
+<!-- ========================= -->
+<!--        SOC CASES          -->
+<!-- ========================= -->
+
+<h2>SOC Investigation Cases</h2>
+
+<p>
+    These cases simulate realistic attacker activity across Windows and Linux systems, with full SIEM visibility,
+    timeline reconstruction, and incident documentation.
+</p>
+
+<ul>
+    <li><a href="soc_lab_setup.html">0. Lab Setup</a> – Virtual machines, network layout, Wazuh SIEM, DFIR‑IRIS, Sysmon, auditd, and service configuration.</li>
+    <li><a href="case_1.html">1. Case 1 – Web Server Intrusion Attempt (Linux / Grav CMS)</a></li>
+    <li><a href="case_2.html">2. Case 2 – Windows Host Compromise Attempt</a></li>
+    <li><a href="case_3.html">3. Case 3 – Multi‑Stage Intrusion Simulation (Phishing → Execution → C2 → Exfiltration)</a></li>
+</ul>
+
+<p>
+    Each case includes evidence, SIEM queries, log artifacts, MITRE ATT&CK mapping, and conclusions based on the
+    observed activity.
+</p>
+
+<!-- ========================= -->
+<!--     PENTESTING LABS       -->
+<!-- ========================= -->
+
+<h2>Hands‑On Penetration Testing Labs</h2>
+
+<p>
+    This portfolio also includes more than 40 practical exploitation writeups across multiple platforms. These
+    labs reinforce offensive security fundamentals such as enumeration, exploitation, privilege escalation, and
+    post‑exploitation analysis.
+</p>
+
+<ul>
+    <li><a href="htb.html">HackTheBox Machines</a> – real‑world Linux and Windows challenges involving web exploitation, misconfigurations, privilege escalation, and service abuse.</li>
+    <li><a href="vulnhub.html">Vulnhub Machines</a> – locally hosted vulnerable VMs focused on enumeration fundamentals, web vulnerabilities, and Linux privilege escalation.</li>
+    <li><a href="offsec_proving_grounds.html">OffSec Proving Grounds</a> – short, targeted exploitation exercises aligned with OSCP‑style workflows.</li>
+</ul>
+
+<p>
+    Each writeup follows a structured methodology: reconnaissance, service enumeration, vulnerability analysis,
+    exploitation, privilege escalation, and key takeaways.
+</p>
+
+
+<!-- ========================= -->
+<!--   ACTIVE DIRECTORY LAB    -->
+<!-- ========================= -->
+
+<h2>Active Directory Attack Lab</h2>
+
+<p>
+    A dedicated lab containing some Active Directory attack techniques, each documented with
+    prerequisites, execution steps and screenshots.
+</p>
+
+<ul>
+    <li><a href="ad_attacks_lab.html">Active Directory Attacks</a></li>
+</ul>
+
+<p>
+    Techniques include Kerberoasting, AS‑REP Roasting, Pass‑the‑Hash, Pass‑the‑Ticket, DCSync, delegation abuse
+    (Unconstrained, Constrained, RBCD), AdminSDHolder persistence, LSASS dumping.
+</p>
+
+
+<!-- ========================= -->
+<!--     DFIR / IR TOOLS       -->
+<!-- ========================= -->
+
+<h2>DFIR & Incident Response Tools</h2>
+
+<p>
+    This section contains detailed forensic and incident response tools use, including full workflows,
+    screenshots, and analysis methodology. These tools complement the SOC investigation cases by enabling
+    deeper endpoint visibility and post-incident validation.
+</p>
+
+<ul>
+    <li><a href="more_tools/velociraptor.html">Velociraptor – Endpoint Forensics & Response</a></li>
+</ul>
+
+<p>
+    Velociraptor was used to supplement Case 3 to validate SIEM findings, analyze LNK metadata, inspect SRUM
+    network usage, recover deleted file traces, and perform timeline-based forensic reconstruction.
+</p>
+
+
+
+<!-- ========================= -->
+<!--     SKILLS + TOOLS        -->
+<!-- ========================= -->
+
+<h2>Skills Demonstrated</h2>
+
+<h3>Defensive / SOC</h3>
+<ul>
+    <li>Log analysis (Windows Event Logs, Sysmon, Nginx access/error logs)</li>
+    <li>SIEM investigation and alert correlation (Wazuh)</li>
+    <li>Threat detection and pattern recognition</li>
+    <li>Incident documentation and timeline reconstruction (DFIR‑IRIS)</li>
+    <li>MITRE ATT&CK technique identification and mapping</li>
+    <li>Threat hunting queries and filtering</li>
+    <li>Analysis of attacker behavior and TTPs</li>
+    <li>Endpoint forensics and response (Velociraptor)</li>
+    <li>Disk, registry, SRUM, Prefetch, USN Journal, and MFT forensic analysis</li>
+
+
+</ul>
+
+<h3>Offensive / Pentesting</h3>
+<ul>
+    <li>Enumeration (web, network, service)</li>
+    <li>Web exploitation (SQLi, LFI/RFI, file upload, CMS vulnerabilities)</li>
+    <li>Linux &amp; Windows privilege escalation</li>
+    <li>Password cracking and credential harvesting</li>
+    <li>Reverse shells, tunneling, and port forwarding</li>
+    <li>Simple exploit development and PoC adaptation</li>
+</ul>
+
+<h2>Tools & Technologies</h2>
+
+<ul>
+    <!-- SOC / DFIR -->
+    <li>Wazuh SIEM</li>
+    <li>DFIR‑IRIS (Case Management)</li>
+    <li>Velociraptor (Endpoint Forensics & Response)</li>
+    <li>Sysmon</li>
+
+    <!-- Frameworks -->
+    <li>MITRE ATT&CK Framework</li>
+
+    <!-- Active Directory / Internal Pentesting -->
+    <li>NetExec</li>
+    <li>Impacket Toolkit</li>
+    <li>BloodHound</li>
+    <li>Responder / LLMNR poisoning</li>
+
+    <!-- Pentesting / Exploitation -->
+    <li>Kali Linux Tooling</li>
+    <li>Metasploit Framework</li>
+    <li>Burp Suite & ZAP</li>
+    <li>ffuf / gobuster</li>
+    <li>nmap (NSE scripts)</li>
+
+    <!-- Credentials / Cracking -->
+    <li>Hydra / Hashcat</li>
+    <li>John the Ripper</li>
+    <li>SecLists (wordlists & payloads)</li>
+
+    <!-- Tunneling / Post‑Exploitation -->
+    <li>SSH / Socat / Chisel tunneling</li>
+
+    <!-- And More-->
+    <li>And more </li>
+</ul>
+
+
+</body>
+
+</html>
+
+
+
+

@@ -1,0 +1,448 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lab Setup</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 6px;
+            text-align: center;
+        }
+
+        th {
+            background: #f0f0f0;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="index.html" class="nav-item">Home</a>
+    <a href="soc_lab_setup.html" class="nav-item active">Lab Setup</a>
+    <a href="case_1.html" class="nav-item">Case 1</a>
+    <a href="case_2.html" class="nav-item">Case 2</a>
+    <a href="case_3.html" class="nav-item">Case 3</a>
+    <a href="ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="more_tools.html" class="nav-item">More Tools</a>
+    <a href="htb.html" class="nav-item">HackTheBox</a>
+<a href="vulnhub.html" class="nav-item">Vulnhub</a>
+<a href="offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<h1>0. Lab Setup</h1>
+
+<p>
+    This page describes the full environment used for the SOC L2 lab, including
+    virtual machines, network layout, tools, and configurations.
+</p>
+
+<h2>Environment Overview</h2>
+<p>
+A homelab for learning and practising SOC L2 work, simulating attacks and performing analysis using Blue Team tools.
+</p>
+
+<img src="images/setup_0.png" alt="setup_0">
+
+<h2>Virtual Machines & Network Information</h2>
+<p>Four VMs in VirtualBox 7.0: SIEM/IR platform, Kali Linux, Windows 10, and a Linux Web Server.</p>
+
+<ul>
+    <li><strong>SIEM and IR</strong> – Wazuh + DFIR‑IRIS (analysis platform)</li>
+    <li><strong>Kali Linux</strong> – Attacker machine</li>
+    <li><strong>Windows 10</strong> – Wazuh agent, Windows attack surface</li>
+    <li><strong>Linux Web Server</strong> – Grav CMS + Nginx + Wazuh agent</li>
+</ul>
+
+<p>
+Each VM uses two network adapters: NAT (Internet) and Host‑Only (internal SOC network 10.10.10.0/24).
+Port‑forwarding is configured via VirtualBox Manager as needed.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>VM Name</th>
+      <th>Role</th>
+      <th>OS</th>
+      <th>RAM</th>
+      <th>CPU</th>
+      <th>Disk</th>
+      <th>IP (host‑only)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>SIEM</strong></td>
+      <td>Wazuh + DFIR‑IRIS</td>
+      <td>Ubuntu Server 22.04</td>
+      <td>6 GB</td>
+      <td>2</td>
+      <td>40 GB</td>
+      <td>10.10.10.10</td>
+    </tr>
+    <tr>
+      <td><strong>WIN10</strong></td>
+      <td>Monitored workstation</td>
+      <td>Windows 10</td>
+      <td>4 GB</td>
+      <td>2</td>
+      <td>20 GB</td>
+      <td>10.10.10.20</td>
+    </tr>
+    <tr>
+      <td><strong>LINUX</strong></td>
+      <td>Monitored Linux host</td>
+      <td>Ubuntu Server 22.04</td>
+      <td>1 GB</td>
+      <td>1</td>
+      <td>20 GB</td>
+      <td>10.10.10.30</td>
+    </tr>
+    <tr>
+      <td><strong>KALI</strong></td>
+      <td>Attack box</td>
+      <td>Kali Linux</td>
+      <td>2 GB</td>
+      <td>1</td>
+      <td>15 GB</td>
+      <td>10.10.10.40</td>
+    </tr>
+  </tbody>
+</table>
+
+<img src="images/setup_1.png" alt="setup_1">
+<p>VirtualBox Host‑Only adapter configuration. DHCP server disabled.</p>
+
+<img src="images/setup_2.png" alt="setup_2">
+
+<h2>Settings & Tool Installation</h2>
+
+<h3>SIEM</h3>
+<p>Static IP configuration (<code>/etc/network/interfaces</code>):</p>
+
+<pre><code>auto lo
+iface lo inet loopback
+
+allow-hotplug enp0s3
+iface enp0s3 inet dhcp
+metric 10
+
+allow-hotplug enp0s8
+iface enp0s8 inet static
+address 10.10.10.10
+netmask 255.255.255.0
+gateway 10.10.10.1
+metric 20
+</code></pre>
+
+<p>Commands:</p>
+
+<pre><code>apt install ifupdown net-tools
+apt remove --purge netplan.io
+ifup enp0s8
+systemctl disable ifupdown-wait-online.service
+systemctl mask ifupdown-wait-online.service
+systemctl stop systemd-networkd
+systemctl disable systemd-networkd
+systemctl mask systemd-networkd
+systemctl mask systemd-networkd-wait-online.service
+</code></pre>
+
+<p>Wazuh Manager installation:</p>
+
+<pre><code>curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh && sudo bash ./wazuh-install.sh -a
+
+# Disable Wazuh updates
+sed -i "s/^deb /#deb /" /etc/apt/sources.list.d/wazuh.list
+apt update
+</code></pre>
+
+<img src="images/setup_3.png" alt="setup_3">
+
+<p>Configure Manager to see all logs, Filebeat archives, and index patterns:</p>
+
+<img src="images/setup_4.png" alt="setup_4">
+<img src="images/setup_5.png" alt="setup_5">
+<img src="images/setup_6.png" alt="setup_6">
+<img src="images/setup_7.png" alt="setup_7">
+<img src="images/setup_8.png" alt="setup_8">
+<img src="images/setup_9.png" alt="setup_9">
+
+<h3>DFIR‑IRIS Installation</h3>
+
+<pre><code>cd /opt
+git clone https://github.com/dfir-iris/iris-web.git
+cd iris-web
+git checkout v2.4.20
+cp .env.model .env
+
+apt install docker docker-compose
+
+DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+mkdir -p $DOCKER_CONFIG/cli-plugins
+curl -SL https://github.com/docker/compose/releases/download/v5.0.1/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+
+docker compose pull
+docker compose up
+docker compose logs app | grep 'administrator'
+</code></pre>
+
+<img src="images/setup_10.png" alt="setup_10">
+<img src="images/setup_11.png" alt="setup_11">
+
+<h3>WIN10</h3>
+
+<p>Static IP configuration:</p>
+<img src="images/setup_12.png" alt="setup_12">
+
+<p>Sysmon installation and configuration:</p>
+
+<pre><code>https://download.sysinternals.com/files/Sysmon.zip
+https://github.com/SwiftOnSecurity/sysmon-config/blob/master/sysmonconfig-export.xml
+
+cd C:\Users\User\Downloads
+.\sysmon64.exe -accepteula -i sysmonconfig-export.xml
+</code></pre>
+
+<img src="images/setup_13.png" alt="setup_13">
+
+<p>Wazuh Agent deployed:</p>
+<img src="images/setup_14.png" alt="setup_14">
+
+<p>Wazuh Agent configuration (<code>C:\Program Files (x86)\ossec-agent\ossec.conf</code>):</p>
+<img src="images/setup_15.png" alt="setup_15">
+
+<pre><code>Restart-Service Wazuh
+</code></pre>
+
+<p>PowerShell logging:</p>
+
+<pre><code>gpedit.msc
+Computer Configuration
+→ Administrative Templates
+→ Windows Components
+Enable:
+- Turn on PowerShell Script Block Logging
+- Turn on PowerShell Module Logging (*, all)
+- Turn on PowerShell Transcription (C:\PSLogs)
+</code></pre>
+
+<img src="images/setup_16.png" alt="setup_16">
+
+<p>Audit policies:</p>
+
+<pre><code>secpol.msc
+Security Settings
+→ Advanced Audit Policy Configuration
+→ System Audit Policies
+
+Account Logon → Success, Failure
+Account Management → Success, Failure
+Logon/Logoff → Success, Failure
+Audit Special Logon → Success
+Object Access → Success, Failure
+Policy Change → Success
+Privilege Use → Success, Failure
+Process Creation → Success
+
+gpupdate /force
+</code></pre>
+
+<p>Checking Wazuh Agent sending logs:</p>
+<img src="images/setup_17.png" alt="setup_17">
+
+<h3>LINUX</h3>
+
+<p>Static IP configuration (<code>/etc/network/interfaces</code>):</p>
+
+<pre><code>auto lo
+iface lo inet loopback
+
+allow-hotplug enp0s3
+iface enp0s3 inet dhcp
+metric 10
+
+allow-hotplug enp0s8
+iface enp0s8 inet static
+address 10.10.10.30
+netmask 255.255.255.0
+gateway 10.10.10.1
+metric 20
+</code></pre>
+
+<p>Commands:</p>
+
+<pre><code>apt install ifupdown net-tools
+apt remove --purge netplan.io
+ifup enp0s8
+systemctl disable ifupdown-wait-online.service
+systemctl mask ifupdown-wait-online.service
+systemctl stop systemd-networkd
+systemctl disable systemd-networkd
+systemctl mask systemd-networkd
+systemctl mask systemd-networkd-wait-online.service
+</code></pre>
+
+<p>Wazuh Agent installation:</p>
+
+<pre><code>wget https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.2-1_amd64.deb 
+sudo WAZUH_MANAGER='10.10.10.10' WAZUH_AGENT_NAME='LINUX-WAZUH_AGENT' dpkg -i ./wazuh-agent_4.14.2-1_amd64.deb
+sudo systemctl daemon-reload
+sudo systemctl enable wazuh-agent
+sudo systemctl start wazuh-agent
+</code></pre>
+
+<p>auditd rules:</p>
+
+<pre><code>apt install auditd audispd-plugins
+systemctl enable --now auditd
+</code></pre>
+
+<img src="images/setup_18.png" alt="setup_18">
+
+<p>rsyslog:</p>
+
+<pre><code>sudo apt install rsyslog
+sudo systemctl enable --now rsyslog
+</code></pre>
+
+<p>FIM configuration (<code>/var/ossec/etc/ossec.conf</code>):</p>
+<img src="images/setup_19.png" alt="setup_19">
+
+<p>Checking Wazuh Agent sending logs:</p>
+<img src="images/setup_20.png" alt="setup_20">
+
+<p>Service configuration (Nginx + GravCMS, FTP) and agent configuration:</p>
+
+<pre><code>sudo apt update
+sudo apt install -y nginx php php-fpm php-zip php-yaml php-gd php-curl php-mbstring unzip
+sudo apt install php-dom php-simplexml php-xml
+
+cd /var/www
+sudo wget https://getgrav.org/download/core/grav-admin/latest -O grav.zip
+sudo unzip grav.zip -d grav
+sudo chown -R www-data:www-data grav
+
+sudo nano /etc/nginx/sites-available/grav
+server {
+    listen 80;
+    server_name 10.10.10.30;
+
+    root /var/www/grav;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+    }
+
+    access_log /var/log/nginx/grav_access.log;
+    error_log /var/log/nginx/grav_error.log;
+}
+
+sudo ln -s /etc/nginx/sites-available/grav /etc/nginx/sites-enabled/
+sudo nginx -t
+
+sudo mv /var/www/grav/grav-admin/* /var/www/grav/
+sudo mv /var/www/grav/grav-admin/.* /var/www/grav/ 2>/dev/null
+sudo rmdir /var/www/grav/grav-admin
+
+sudo chown -R www-data:www-data /var/www/grav
+sudo chmod -R 755 /var/www/grav
+
+sudo systemctl restart php8.1-fpm
+sudo systemctl restart nginx
+
+sudo systemctl restart wazuh-agent
+
+# vsftpd
+sudo apt update && sudo apt install vsftpd -y
+
+# Weak user
+sudo useradd -m testuser
+sudo passwd testuser
+</code></pre>
+
+<img src="images/setup_21.png" alt="setup_21">
+<img src="images/setup_22.png" alt="setup_22">
+
+<h3>KALI</h3>
+
+<p>Static IP configuration:</p>
+<img src="images/setup_23.png" alt="setup_23">
+
+<p>Connectivity tests:</p>
+<img src="images/setup_24.png" alt="setup_24">
+
+<p><a href="index.html">← Back to Home</a></p>
+
+</body>
+</html>
+
+
+
+
