@@ -1,0 +1,186 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/x-icon" href="../images/favicon.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>More Tools - Incident Response Frameworks</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+            color: #222;
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { margin-top: 25px; }
+
+        img {
+            margin: 15px 0;
+            max-width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            overflow-x: auto;
+            border-left: 4px solid #ccc;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .navbar {
+            margin-bottom: 30px;
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .nav-item {
+            margin-right: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-item.active {
+            color: black;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="../index.html" class="nav-item">Home</a>
+    <a href="../soc_lab_setup.html" class="nav-item">Lab Setup</a>
+    <a href="../case_1.html" class="nav-item">Case 1</a>
+    <a href="../case_2.html" class="nav-item">Case 2</a>
+    <a href="../case_3.html" class="nav-item">Case 3</a>
+    <a href="../ad_attacks_lab.html" class="nav-item">Active Directory Attacks</a>
+    <a href="../more_tools.html" class="nav-item active">More Tools</a>
+    <a href="../htb.html" class="nav-item">HackTheBox</a>
+    <a href="../vulnhub.html" class="nav-item">Vulnhub</a>
+    <a href="../offsec_proving_grounds.html" class="nav-item">Offsec Proving Grounds</a>
+</div>
+
+<h1>NIST 800-61 Rev. 3 - Incident Response & CSF 2.0</h1>
+
+<h2>Index</h2>
+
+<ul>
+    <li><a href="#intro">Introduction</a></li>
+    <li><a href="#prep">1. Preparation (Govern, Identify, Protect)</a></li>
+    <li><a href="#det">2. Detection & Analysis (Detect)</a></li>
+    <li><a href="#resp">3. Incident Response (Respond)</a></li>
+    <li><a href="#rec">4. Recovery (Recover)</a></li>
+    <li><a href="#ens">ENS Compliance Mapping</a></li>
+    <li><a href="#refs">Official Frameworks & Resources</a></li>
+</ul>
+
+<h2 id="intro">Introduction</h2>
+
+<p>This document describes the incident response lifecycle according to the new <strong>NIST 800-61 Rev. 3 (2025)</strong>, which integrates the <strong>NIST CSF 2.0</strong> functions. We use <a href="../case_3.html">Case 3 – Multi-stage Attack
+</a> to demonstrate how technical findings map to international standards and the <strong>Spanish ENS (Esquema Nacional de Seguridad)</strong>.</p>
+
+<hr>
+
+<h2 id="prep">1. Preparation (Govern, Identify, Protect)</h2>
+
+<p>Under Rev. 3, preparation is a continuous process of risk management and governance.</p>
+
+<ul>
+    <li><strong>Govern (GV):</strong> Establishing the incident response policy. In <a href="../case_3.html">Case 3 – Multi-stage Attack
+</a>, this includes defining the authority to isolate compromised hosts.</li>
+    <li><strong>Identify (ID):</strong> Mapping assets and vulnerabilities. Using <strong>ENS [op.exp.1] Inventario de activos</strong> to ensure Sysmon logging is active on the Windows 10 workstation.</li>
+    <li><strong>Protect (PR):</strong> Implementing safeguards. <strong>ENS [op.acc.6] Mecanismo de autenticación (usuarios de la organización)</strong> via MFA and restricting LOLBINs like <code>mshta.exe</code> to prevent initial execution.</li>
+</ul>
+
+<h2 id="det">2. Detection & Analysis (Detect)</h2>
+
+<p>Finding and characterizing the adverse event.</p>
+
+<ul>
+    <li><strong>Continuous Monitoring (DE.CM):</strong> Wazuh SIEM identifies the execution of <code>mshta.exe</code> and its network connection to the C2 IP <code>10.10.10.40</code>.</li>
+    <li><strong>Adverse Event Analysis (DE.AE):</strong> Validating the malicious <code>.lnk</code> file metadata via Velociraptor. Confirming the TTPs match <strong>MITRE T1218.005</strong>.</li>
+</ul>
+
+<h2 id="resp">3. Incident Response (Respond)</h2>
+
+<p>Taking action to manage and contain the incident.</p>
+
+<ul>
+    <li><strong>Incident Management (RS.MA):</strong> Declaring the incident in <strong>DFIR-IRIS</strong> and assigning a "High" severity due to credential exfiltration.</li>
+    <li><strong>Incident Mitigation (RS.MI):</strong> 
+        <ul>
+            <li><strong>Containment:</strong> Isolating the host from the network.</li>
+            <li><strong>Eradication:</strong> Removing the <code>gift.hta</code> and <code>Employee_Bonus_Plan.pdf.lnk</code> files.</li>
+        </ul>
+    </li>
+</ul>
+
+<h2 id="rec">4. Recovery (Recover)</h2>
+
+<p>Restoring assets and operations affected by the incident.</p>
+
+<ul>
+    <li><strong>Incident Recovery Plan Execution (RC.RP):</strong> Restoring the user's desktop from a clean backup (<strong>ENS [mp.info.6] Copias de seguridad</strong>) and forcing a password reset.</li>
+    <li><strong>Improvement (ID.IM):</strong> Conducting a "Lessons Learned" meeting to update the email filter policies against password-protected ZIP files.</li>
+</ul>
+
+<hr>
+
+<h2 id="ens">ENS Compliance Mapping Summary</h2>
+
+<p>How NIST CSF 2.0 Functions align with the Spanish ENS (RD 311/2022) for this case:</p>
+
+<table border="1">
+    <thead>
+        <tr>
+            <th>CSF 2.0 Function</th>
+            <th>Activity in Case 3</th>
+            <th>ENS Control (Anexo II)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Govern / Protect</td>
+            <td>Policy & MFA Hardening</td>
+            <td>op.acc (Control de acceso)</td>
+        </tr>
+        <tr>
+            <td>Detect</td>
+            <td>SIEM & Forensic Analysis</td>
+            <td>op.exp.8 (Registro de la actividad)</td>
+        </tr>
+        <tr>
+            <td>Respond</td>
+            <td>Containment & IR Tracking</td>
+            <td>op.exp.7 (Gestión de incidentes)</td>
+        </tr>
+        <tr>
+            <td>Recover</td>
+            <td>System Restoration</td>
+            <td>mp.info.6 (Copias de seguridad)</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2 id="refs">Official Frameworks & Resources</h2>
+
+<ul>
+    <li><a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-61r3.pdf" target="_blank">NIST SP 800-61 Rev. 3 - Incident Response Recommendations and Considerations</a></li>
+    <li><a href="https://www.boe.es/buscar/pdf/2022/BOE-A-2022-7191-consolidado.pdf" target="_blank">Esquema Nacional de Seguridad (ENS) - RD 311/2022</a></li>
+</ul>
+
+</body>
+
+</html>
