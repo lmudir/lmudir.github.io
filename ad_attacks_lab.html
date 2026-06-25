@@ -1316,7 +1316,7 @@ impacket-psexec -k -no-pass lab.local/Administrator@MY-BOX.lab.local
 
 <hr>
 
-<h2>Lab Configuration (Corrected)</h2>
+<h2>Lab Configuration</h2>
 
 <h3>1. Grant GenericAll Permissions (Domain Controller)</h3>
 
@@ -1360,26 +1360,7 @@ Get-ADDomain -Identity lab.local |
 
 <hr>
 
-<h2>Troubleshooting</h2>
 
-<table border=1>
-    <tr>
-        <th>Issue</th>
-        <th>Solution</th>
-    </tr>
-    <tr>
-        <td>addcomputer.py fails</td>
-        <td>Verify that MachineAccountQuota is greater than zero.</td>
-    </tr>
-    <tr>
-        <td>rbcd.py access denied</td>
-        <td>Confirm GenericAll permissions on the target computer object.</td>
-    </tr>
-    <tr>
-        <td>getST fails</td>
-        <td>Ensure the target computer is online and required services are running.</td>
-    </tr>
-</table>
 
 <h2>Key Notes</h2>
 
